@@ -1,0 +1,96 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "Why is NumPy significantly faster than pure Python loops for numerical operations?",
+      "options": [
+        "NumPy uses a just-in-time compiler to optimize Python bytecode",
+        "NumPy dispatches to compiled C code, uses SIMD instructions, and benefits from contiguous memory layout",
+        "NumPy runs operations on the GPU by default",
+        "NumPy uses Python's multiprocessing module to parallelize loops"
+      ],
+      "correct": "B",
+      "explanation": "NumPy's speed comes from three factors: operations are implemented in compiled C/Fortran, modern CPU SIMD instructions (SSE/AVX) process multiple numbers per clock cycle, and contiguous memory layout enables efficient cache usage. NumPy does not use the GPU or Python multiprocessing by default."
+    },
+    {
+      "id": "q2",
+      "type": "code_output",
+      "question": "What is the output of the following code?\n\n```python\nimport numpy as np\na = np.arange(6).reshape(2, 3)\nprint(a[:, 1])\n```",
+      "options": [
+        "[0, 1, 2]",
+        "[1, 4]",
+        "[1, 2]",
+        "[3, 4, 5]"
+      ],
+      "correct": "B",
+      "explanation": "np.arange(6).reshape(2, 3) creates [[0, 1, 2], [3, 4, 5]]. The slice [:, 1] selects all rows, column index 1, which gives [1, 4]."
+    },
+    {
+      "id": "q3",
+      "type": "true_false",
+      "question": "Slicing a NumPy array (e.g., b = a[2:5]) creates a copy of the data, so modifying b will NOT affect a.",
+      "correct": "false",
+      "explanation": "NumPy slices return views, not copies. Modifying elements of b will also modify the corresponding elements of a. Use a[2:5].copy() to get an independent copy."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What is the shape of the result when you add an array of shape (4, 1) to an array of shape (1, 3)?",
+      "options": [
+        "(4, 3)",
+        "(1, 3)",
+        "(4, 1)",
+        "This raises a broadcasting error"
+      ],
+      "correct": "A",
+      "explanation": "Broadcasting compares shapes right to left. Dimension 1: 1 vs 3 -- the 1 stretches to 3. Dimension 0: 4 vs 1 -- the 1 stretches to 4. Result shape is (4, 3)."
+    },
+    {
+      "id": "q5",
+      "type": "code_output",
+      "question": "What does the following code print?\n\n```python\nimport numpy as np\na = np.array([1, 2, 3])\nb = np.array([4, 5, 6])\nprint(a @ b)\n```",
+      "options": [
+        "[4, 10, 18]",
+        "32",
+        "[[4, 5, 6], [8, 10, 12], [12, 15, 18]]",
+        "An error because @ requires 2-D arrays"
+      ],
+      "correct": "B",
+      "explanation": "For two 1-D arrays, the @ operator computes the dot product: 1*4 + 2*5 + 3*6 = 4 + 10 + 18 = 32. It returns a scalar."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "Given X with shape (100, 5), what does X.mean(axis=0) return?",
+      "options": [
+        "A single scalar -- the mean of all 500 elements",
+        "An array of shape (100,) -- the mean of each row",
+        "An array of shape (5,) -- the mean of each column",
+        "An array of shape (100, 5) -- unchanged"
+      ],
+      "correct": "C",
+      "explanation": "axis=0 collapses the row dimension. For each of the 5 columns, it computes the mean over all 100 rows, producing an array of shape (5,)."
+    },
+    {
+      "id": "q7",
+      "type": "true_false",
+      "question": "np.array([1, 2, 3]).reshape(1, -1) produces an array with shape (1, 3).",
+      "correct": "true",
+      "explanation": "The -1 tells NumPy to infer the dimension. The original array has 3 elements. With one dimension fixed at 1, the other must be 3. Result shape is (1, 3)."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "Which of the following is the correct vectorized implementation of Mean Squared Error: MSE = (1/n) * sum((y_pred - y_true)^2)?",
+      "options": [
+        "np.sum(y_pred - y_true) ** 2 / len(y_true)",
+        "np.mean((y_pred - y_true) ** 2)",
+        "np.mean(np.abs(y_pred - y_true))",
+        "np.sum(y_pred ** 2 - y_true ** 2) / len(y_true)"
+      ],
+      "correct": "B",
+      "explanation": "MSE = mean of squared errors. np.mean((y_pred - y_true) ** 2) first computes element-wise differences, squares them, then takes the mean. Option A squares the sum instead of summing the squares. Option C computes Mean Absolute Error. Option D computes the difference of squares, not the square of differences."
+    }
+  ]
+}

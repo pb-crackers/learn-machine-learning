@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "In K-means clustering, what does the algorithm do during the 'update' step?",
+      "options": [
+        "Assigns each point to the nearest centroid",
+        "Recalculates each centroid as the mean of its assigned points",
+        "Removes outlier points from each cluster",
+        "Increases K by one if clusters are too large"
+      ],
+      "correct": "B",
+      "explanation": "The K-means algorithm alternates between two steps: (1) assignment — assign each point to the nearest centroid, and (2) update — recompute each centroid as the mean of all points currently assigned to it. This cycle repeats until convergence."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "The 'elbow method' for choosing K plots which quantity on the y-axis?",
+      "options": [
+        "The number of iterations to convergence",
+        "The silhouette score",
+        "The inertia (within-cluster sum of squares)",
+        "The accuracy of the clustering"
+      ],
+      "correct": "C",
+      "explanation": "The elbow method plots inertia (within-cluster sum of squared distances to centroids) against K. As K increases, inertia always decreases. The 'elbow' is the point where adding more clusters gives diminishing returns — the inertia curve bends and flattens."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "A silhouette score close to -1 for a data point means:",
+      "options": [
+        "The point is at the center of its cluster",
+        "The point is equidistant between two clusters",
+        "The point is likely assigned to the wrong cluster",
+        "The point is an outlier that does not belong to any cluster"
+      ],
+      "correct": "C",
+      "explanation": "A silhouette score near -1 means the point is much closer to a neighboring cluster than to its own cluster. It is likely misassigned. A score near +1 means the point is well within its cluster, and 0 means it is on the boundary between clusters."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "In PCA, the first principal component is the direction that:",
+      "options": [
+        "Minimizes the total variance in the data",
+        "Maximizes the variance of the projected data",
+        "Is perpendicular to the feature with the largest range",
+        "Has the smallest eigenvalue"
+      ],
+      "correct": "B",
+      "explanation": "The first principal component is the unit vector along which the variance of the projected data is maximized. Mathematically, it is the eigenvector corresponding to the largest eigenvalue of the covariance matrix. Each subsequent component captures the maximum remaining variance while being orthogonal to all previous components."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "Why should you scale features before applying PCA?",
+      "options": [
+        "PCA requires all features to be positive",
+        "Scaling ensures that PCA converges faster",
+        "Without scaling, features with larger scales dominate the principal components",
+        "Scaling is required to compute eigenvalues"
+      ],
+      "correct": "C",
+      "explanation": "PCA finds directions of maximum variance. If one feature ranges from 0 to 10,000 while another ranges from 0 to 1, the first feature will dominate simply because its scale is larger — not because it is more informative. StandardScaler puts all features on the same scale so PCA captures true patterns rather than scale differences."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "K-means clustering is NOT well-suited for which type of data?",
+      "options": [
+        "Data with spherical, similarly-sized clusters",
+        "High-dimensional data after PCA",
+        "Data with non-convex, elongated, or ring-shaped clusters",
+        "Data with clearly separated groups"
+      ],
+      "correct": "C",
+      "explanation": "K-means assumes clusters are roughly spherical (isotropic) and of similar size. It assigns points based on distance to the nearest centroid, which cannot capture non-convex shapes like crescents, rings, or elongated clusters. For such data, density-based methods like DBSCAN are more appropriate."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "If a PCA on a 50-dimensional dataset shows that the first 10 components explain 95% of the total variance, what does this mean?",
+      "options": [
+        "The original 50 features are all equally important",
+        "Most of the information in the data can be captured with just 10 dimensions",
+        "The remaining 40 features should be deleted from the dataset",
+        "The data has exactly 10 clusters"
+      ],
+      "correct": "B",
+      "explanation": "When 10 components explain 95% of the variance, it means the data effectively lives in a much lower-dimensional space than its original 50 dimensions. You can represent each sample with 10 numbers instead of 50, losing only 5% of the information. This is useful for visualization, speeding up training, and reducing overfitting."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "Why does K-means need to be run multiple times with different initializations?",
+      "options": [
+        "To find different numbers of clusters",
+        "Because the algorithm is stochastic and may converge to different local minima",
+        "To validate the results with cross-validation",
+        "Because a single run does not process all data points"
+      ],
+      "correct": "B",
+      "explanation": "The K-means objective function is non-convex, meaning different initial centroid positions can lead to different final solutions (local minima). By running the algorithm multiple times with different random initializations and keeping the result with the lowest inertia, we increase the chance of finding a good clustering. Scikit-learn's n_init parameter controls this (default is 10)."
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "In a data matrix X with shape (500, 10), what do the rows and columns represent?",
+      "options": [
+        "500 features and 10 samples",
+        "500 samples and 10 features",
+        "A 500-dimensional vector with 10 elements",
+        "10 samples each with 500 target values"
+      ],
+      "correct": "B",
+      "explanation": "By convention in ML, each row of the data matrix represents one sample (data point) and each column represents one feature. So (500, 10) means 500 samples with 10 features each."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "What does the dot product of a feature vector x and a weight vector w compute in a linear model?",
+      "options": [
+        "The distance between x and w",
+        "The angle between x and w",
+        "A weighted sum of the features — the model's prediction (before adding bias)",
+        "The element-wise product of x and w"
+      ],
+      "correct": "C",
+      "explanation": "The dot product w · x = w₁x₁ + w₂x₂ + ... + wₙxₙ is a weighted sum of features. In a linear model, the prediction is ŷ = w · x + b, making the dot product the core of the prediction."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "If matrix A has shape (3, 4) and matrix B has shape (4, 2), what is the shape of A @ B?",
+      "options": [
+        "(4, 4)",
+        "(3, 2)",
+        "(3, 4)",
+        "The multiplication is not defined"
+      ],
+      "correct": "B",
+      "explanation": "When multiplying an (m × n) matrix by an (n × p) matrix, the inner dimensions (n) must match, and the result has shape (m × p). Here: (3, 4) @ (4, 2) = (3, 2)."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What is the difference between `A * B` and `A @ B` in NumPy?",
+      "options": [
+        "They are identical for 2D arrays",
+        "`A * B` is matrix multiplication; `A @ B` is element-wise",
+        "`A * B` is element-wise multiplication; `A @ B` is matrix multiplication",
+        "`A * B` computes the dot product; `A @ B` computes the cross product"
+      ],
+      "correct": "C",
+      "explanation": "In NumPy, * performs element-wise (Hadamard) multiplication, while @ performs matrix multiplication (equivalent to np.matmul). This is a common source of bugs."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "If two vectors have a cosine similarity of 0, what does that tell you?",
+      "options": [
+        "The vectors are identical",
+        "The vectors point in opposite directions",
+        "The vectors are perpendicular (orthogonal) to each other",
+        "One of the vectors is the zero vector"
+      ],
+      "correct": "C",
+      "explanation": "Cosine similarity equals cos(θ) where θ is the angle between the vectors. cos(90°) = 0, meaning the vectors are perpendicular. This implies no linear relationship between them."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "What does an eigenvector of a matrix A represent geometrically?",
+      "options": [
+        "A vector that becomes the zero vector when transformed by A",
+        "A vector whose direction does not change when transformed by A — it only gets scaled",
+        "The vector with the largest magnitude in the matrix",
+        "A vector perpendicular to all rows of A"
+      ],
+      "correct": "B",
+      "explanation": "An eigenvector v satisfies Av = λv, meaning A only scales v by the factor λ (the eigenvalue) without changing its direction. This is the defining property of eigenvectors."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "Why is matrix multiplication preferred over Python loops for computing predictions on a dataset?",
+      "options": [
+        "Matrix multiplication uses less memory",
+        "Python loops produce different numerical results",
+        "NumPy delegates matrix operations to optimized C/Fortran code, which is orders of magnitude faster",
+        "Matrix multiplication automatically handles missing values"
+      ],
+      "correct": "C",
+      "explanation": "NumPy's matrix operations are backed by highly optimized BLAS/LAPACK libraries written in C and Fortran. They operate on contiguous blocks of memory and use CPU vectorization, making them orders of magnitude faster than Python loops."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "In PCA, what do the eigenvalues of the covariance matrix tell you?",
+      "options": [
+        "The mean of each feature",
+        "The number of clusters in the data",
+        "How much variance is explained along each principal component direction",
+        "The correlation between each pair of features"
+      ],
+      "correct": "C",
+      "explanation": "Each eigenvalue of the covariance matrix represents the amount of variance in the data along the corresponding eigenvector (principal component) direction. Larger eigenvalues indicate directions where the data varies more."
+    }
+  ]
+}

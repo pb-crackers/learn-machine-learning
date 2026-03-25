@@ -1,0 +1,405 @@
+---
+module: 4
+lesson: 4
+title: "Large Language Models: How GPT & Claude Work"
+description: "Understand how decoder-only transformers are pretrained via next-token prediction, how tokenization works (BPE), scaling laws, alignment techniques (RLHF, Constitutional AI), and how inference sampling parameters control generation."
+prerequisites: ["4.3"]
+estimatedMinutes: 60
+---
+
+# Large Language Models: How GPT & Claude Work
+
+You now understand the transformer architecture. In this lesson, we zoom in on **decoder-only transformers** -- the specific variant behind GPT, Claude, Llama, and most modern large language models (LLMs). We will cover how they are trained (pretraining and alignment), what tokenization really does, why scale matters, and what happens during inference when you adjust temperature or top-p.
+
+<WhyThisMatters>
+If you are building products with LLM APIs, understanding the training pipeline and inference mechanics lets you make better decisions: choosing the right model size, writing more effective prompts, setting generation parameters appropriately, and understanding why models behave the way they do (and sometimes misbehave).
+</WhyThisMatters>
+
+## Decoder-Only Transformers
+
+Recall from Lesson 4.3 that the original transformer had an encoder and a decoder. Modern LLMs use **only the decoder** portion -- a stack of transformer blocks with **causal (masked) self-attention**, meaning each position can only attend to itself and earlier positions.
+
+Why decoder-only? The task is simple and universal: **predict the next token**. Given a sequence of tokens $x_1, x_2, \ldots, x_{t-1}$, predict $x_t$. This single objective, applied at massive scale, turns out to be extraordinarily powerful.
+
+```
+Input:    [The] [cat] [sat] [on] [the] [???]
+           |     |     |     |    |
+           v     v     v     v    v
+        Transformer Decoder (causal attention)
+           |     |     |     |    |
+           v     v     v     v    v
+Predict:  [cat] [sat] [on] [the] [mat]
+```
+
+Each position simultaneously predicts the next token, but through causal masking, position $t$ only sees tokens $1$ through $t$.
+
+## Tokenization: How Text Becomes Numbers
+
+Before any transformer processing, raw text must be converted to a sequence of integer token IDs. Modern LLMs do **not** tokenize by splitting on whitespace. Instead, they use **subword tokenization** algorithms.
+
+### Why Subword Tokenization?
+
+Word-level tokenization has two fatal problems:
+1. **Huge vocabulary**: you need a separate entry for every word form ("run", "runs", "running", "runner").
+2. **Out-of-vocabulary (OOV)**: any word not in the vocabulary is unrepresentable.
+
+Character-level tokenization solves OOV but creates very long sequences (a 100-word paragraph becomes ~500 characters), which is expensive for transformers with $O(n^2)$ attention.
+
+Subword tokenization splits rare words into frequent sub-parts while keeping common words intact:
+- "unhappiness" -> ["un", "happiness"] or ["un", "happi", "ness"]
+- "transformer" -> ["transform", "er"]
+- "ChatGPT" -> ["Chat", "G", "PT"]
+
+### Byte Pair Encoding (BPE)
+
+The most common subword algorithm is **Byte Pair Encoding**, originally a compression algorithm:
+
+1. Start with a vocabulary of individual characters (or bytes).
+2. Count all adjacent pairs of tokens in the training corpus.
+3. Merge the most frequent pair into a new token.
+4. Repeat steps 2-3 for a desired number of merges (e.g., 50,000 times).
+
+```python
+def learn_bpe(corpus, num_merges):
+    """Simplified BPE learning algorithm."""
+    # Start: each word is a sequence of characters + end-of-word marker
+    vocab = {}
+    for word, freq in corpus.items():
+        # "lower" with freq 5 -> ('l', 'o', 'w', 'e', 'r', '</w>'): 5
+        vocab[tuple(word) + ('</w>',)] = freq
+
+    merges = []
+    for i in range(num_merges):
+        # Count all adjacent pairs
+        pairs = {}
+        for word, freq in vocab.items():
+            for j in range(len(word) - 1):
+                pair = (word[j], word[j + 1])
+                pairs[pair] = pairs.get(pair, 0) + freq
+
+        if not pairs:
+            break
+
+        # Find the most frequent pair
+        best_pair = max(pairs, key=pairs.get)
+        merges.append(best_pair)
+
+        # Merge that pair in all words
+        new_vocab = {}
+        merged = best_pair[0] + best_pair[1]
+        for word, freq in vocab.items():
+            new_word = []
+            i = 0
+            while i < len(word):
+                if i < len(word) - 1 and (word[i], word[i+1]) == best_pair:
+                    new_word.append(merged)
+                    i += 2
+                else:
+                    new_word.append(word[i])
+                    i += 1
+            new_vocab[tuple(new_word)] = freq
+        vocab = new_vocab
+
+    return merges, vocab
+
+# Example
+corpus = {"low": 5, "lower": 2, "newest": 6, "widest": 3}
+merges, final_vocab = learn_bpe(corpus, num_merges=10)
+for m in merges[:5]:
+    print(f"Merge: {m[0]} + {m[1]} -> {m[0]+m[1]}")
+```
+
+### Tokenization in Practice
+
+```python
+# Using the tiktoken library (OpenAI's tokenizer for GPT models)
+import tiktoken
+
+enc = tiktoken.get_encoding("cl100k_base")  # GPT-4 tokenizer
+
+text = "Transformers are surprisingly effective!"
+tokens = enc.encode(text)
+print(f"Text: {text}")
+print(f"Token IDs: {tokens}")
+print(f"Tokens: {[enc.decode([t]) for t in tokens]}")
+print(f"Number of tokens: {len(tokens)}")
+
+# Typical output:
+# Token IDs: [9140, 388, 18611, 7524, 0]
+# Tokens: ['Transform', 'ers', ' are', ' surprisingly', ' effective', '!']
+# Number of tokens: 6
+```
+
+<CommonMistake>
+Token counts are NOT the same as word counts. The sentence "I am happy" might be 3 tokens, but "antidisestablishmentarianism" might also be 3+ tokens. When working with LLM APIs, always count tokens (not words) to estimate costs and stay within context limits. Most API providers offer tokenizer libraries for this purpose.
+</CommonMistake>
+
+## Pretraining: Next-Token Prediction at Scale
+
+### The Objective
+
+The pretraining objective is autoregressive language modeling: maximize the probability of each token given all preceding tokens.
+
+<MathNote>
+Given a sequence $\mathbf{x} = (x_1, x_2, \ldots, x_T)$, the model maximizes:
+
+$$\mathcal{L}(\theta) = \sum_{t=1}^{T} \log P_\theta(x_t \mid x_1, x_2, \ldots, x_{t-1})$$
+
+The model outputs a probability distribution over the entire vocabulary at each position. The loss is the cross-entropy between this predicted distribution and the actual next token.
+
+In practice, this is computed efficiently because causal masking lets us compute the loss for **all positions simultaneously** in a single forward pass.
+</MathNote>
+
+### Training Data
+
+Modern LLMs are pretrained on enormous text corpora:
+
+| Model | Training Data Size | Tokens |
+|-------|-------------------|--------|
+| GPT-2 (2019) | ~40 GB text | ~10 billion tokens |
+| GPT-3 (2020) | ~570 GB text | ~300 billion tokens |
+| Llama 2 (2023) | ~2 trillion tokens | 2 trillion tokens |
+| Llama 3 (2024) | ~15 trillion tokens | 15 trillion tokens |
+
+The data includes web pages, books, code, scientific papers, and more. Data quality and deduplication are critical -- models trained on low-quality data produce low-quality outputs.
+
+### Training Infrastructure
+
+Pretraining a frontier LLM requires:
+- Thousands of GPUs (A100s or H100s) running for weeks to months
+- Distributed training across many machines (data parallelism, tensor parallelism, pipeline parallelism)
+- Costs of tens to hundreds of millions of dollars
+
+This is why most practitioners use pre-trained models via APIs or fine-tune open-weight models rather than training from scratch.
+
+## Scaling Laws
+
+A remarkable empirical finding is that LLM performance follows predictable **power laws** as you increase model size, data size, and compute:
+
+<MathNote>
+The Chinchilla scaling laws (Hoffmann et al., 2022) suggest that for compute-optimal training:
+
+$$L(N, D) \approx \frac{A}{N^\alpha} + \frac{B}{D^\beta} + L_\infty$$
+
+where $L$ is the loss, $N$ is the number of parameters, $D$ is the number of training tokens, and $\alpha \approx 0.34$, $\beta \approx 0.28$ are empirically determined exponents.
+
+The key insight: **model size and data size should be scaled together**. A model with $N$ parameters should be trained on approximately $20N$ tokens. GPT-3 (175B parameters) was likely undertrained by this criterion.
+</MathNote>
+
+This means performance is predictable: if you double your compute budget, you can predict how much better the model will be. Larger models are not just "bigger" -- they acquire qualitatively new capabilities (called **emergent abilities**) at certain scale thresholds.
+
+## Post-Training Alignment
+
+A model trained only on next-token prediction is a powerful text completer, but it is not a useful assistant. It might continue a prompt with toxic content, refuse to answer questions, or generate plausible-sounding nonsense. **Alignment** makes the model helpful, harmless, and honest.
+
+### Supervised Fine-Tuning (SFT)
+
+The first alignment step: humans write examples of ideal assistant behavior (prompt-response pairs), and the model is fine-tuned on these demonstrations.
+
+```python
+# Conceptual SFT training data format
+sft_examples = [
+    {
+        "prompt": "What is the capital of France?",
+        "response": "The capital of France is Paris. It is the country's "
+                    "largest city and has been the capital since the 10th century."
+    },
+    {
+        "prompt": "Write a haiku about machine learning.",
+        "response": "Data flows like streams\n"
+                    "Weights adjust through gradient\n"
+                    "Patterns emerge, learn"
+    },
+]
+
+# The model is fine-tuned with the same next-token prediction loss,
+# but only on the response tokens (the prompt tokens are context only).
+```
+
+### Reinforcement Learning from Human Feedback (RLHF)
+
+SFT gets the model into the right ballpark, but it is limited by the quality and quantity of human demonstrations. RLHF goes further:
+
+1. **Collect comparisons**: Show humans two model responses to the same prompt and ask which is better.
+2. **Train a reward model**: A neural network that predicts human preference scores from (prompt, response) pairs.
+3. **Optimize with RL**: Use Proximal Policy Optimization (PPO) to adjust the LLM to maximize the reward model's score while staying close to the SFT model (via a KL divergence penalty).
+
+<MathNote>
+The RLHF objective:
+
+$$\max_\pi \, \mathbb{E}_{x \sim D, \, y \sim \pi(y|x)} \left[ R(x, y) \right] - \beta \, D_{\text{KL}}\left[\pi(y|x) \| \pi_{\text{ref}}(y|x)\right]$$
+
+where $\pi$ is the policy (the LLM being optimized), $R(x, y)$ is the reward model score, $\pi_{\text{ref}}$ is the reference model (the SFT model), and $\beta$ controls how far the model can deviate from the reference.
+</MathNote>
+
+### Constitutional AI (Claude's Approach)
+
+Anthropic's approach to alignment used for Claude replaces some human feedback with AI feedback guided by a set of principles (a "constitution"):
+
+1. Generate responses to potentially harmful prompts.
+2. Ask the model to critique its own response based on principles like "Is this response helpful?" and "Could this response cause harm?"
+3. Ask the model to revise its response.
+4. Use the revised responses to train a preference model (similar to RLHF).
+
+This reduces reliance on human annotators for every edge case and makes the alignment principles explicit and auditable.
+
+### Direct Preference Optimization (DPO)
+
+A newer approach that skips the reward model entirely. DPO directly optimizes the language model on preference pairs:
+
+$$\mathcal{L}_{\text{DPO}}(\pi_\theta; \pi_{\text{ref}}) = -\mathbb{E}_{(x, y_w, y_l)} \left[\log \sigma\!\left(\beta \log \frac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)} - \beta \log \frac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)}\right)\right]$$
+
+where $y_w$ is the preferred response and $y_l$ is the dispreferred response. DPO is simpler and more stable than RLHF while achieving comparable results.
+
+## Fine-Tuning Pre-Trained Models
+
+You do not need to pretrain a model from scratch. **Fine-tuning** adapts a pre-trained model to a specific task or domain.
+
+### Full Fine-Tuning
+
+Update all parameters on your task-specific data. Effective but requires significant GPU memory (you need to store optimizer states for every parameter).
+
+### Parameter-Efficient Fine-Tuning (PEFT)
+
+**LoRA (Low-Rank Adaptation)** freezes the original model weights and injects small trainable low-rank matrices:
+
+Instead of updating weight matrix $\mathbf{W} \in \mathbb{R}^{d \times d}$, LoRA adds $\Delta\mathbf{W} = \mathbf{B}\mathbf{A}$ where $\mathbf{B} \in \mathbb{R}^{d \times r}$ and $\mathbf{A} \in \mathbb{R}^{r \times d}$ with rank $r \ll d$ (typically 4-64).
+
+```python
+# Using the PEFT library with Hugging Face
+from peft import LoraConfig, get_peft_model
+from transformers import AutoModelForCausalLM
+
+model = AutoModelForCausalLM.from_pretrained("gpt2")
+print(f"Original parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+lora_config = LoraConfig(
+    r=16,               # Rank of the low-rank matrices
+    lora_alpha=32,       # Scaling factor
+    target_modules=["c_attn", "c_proj"],  # Which layers to adapt
+    lora_dropout=0.1,
+)
+
+model = get_peft_model(model, lora_config)
+model.print_trainable_parameters()
+# "trainable params: 294,912 || all params: 124,734,464 || trainable%: 0.24%"
+```
+
+<KeyTakeaway>
+LoRA lets you fine-tune a large model by training less than 1% of the parameters. The fine-tuned adapter weights are tiny (a few MB) and can be swapped in and out, letting you serve multiple specialized models from a single base model. This is how most production fine-tuning is done today.
+</KeyTakeaway>
+
+## Inference: How Text Is Generated
+
+At inference time, the model generates text one token at a time. At each step:
+
+1. Feed the current sequence through the transformer.
+2. Get the logits (un-normalized scores) for the next token: $\mathbf{z} \in \mathbb{R}^V$.
+3. Apply a sampling strategy to select the next token.
+4. Append the selected token to the sequence.
+5. Repeat until a stop condition (max length, end-of-sequence token, stop string).
+
+### Temperature
+
+Temperature $\tau$ controls the "sharpness" of the probability distribution:
+
+$$P(x_i) = \frac{\exp(z_i / \tau)}{\sum_j \exp(z_j / \tau)}$$
+
+- $\tau \to 0$: The distribution becomes a delta function on the highest-logit token (**greedy decoding**). Output is deterministic and repetitive.
+- $\tau = 1$: Standard softmax probabilities as learned during training.
+- $\tau > 1$: Flatter distribution, more randomness, more "creative" but also more likely to produce nonsense.
+
+### Top-k Sampling
+
+Only consider the $k$ tokens with the highest logits. Set all other logits to $-\infty$ before applying softmax.
+
+```python
+def top_k_sample(logits, k=50, temperature=1.0):
+    """Sample from the top-k tokens."""
+    logits = logits / temperature
+
+    # Keep only top-k
+    top_k_logits, top_k_indices = torch.topk(logits, k)
+    probs = torch.softmax(top_k_logits, dim=-1)
+
+    # Sample from the filtered distribution
+    idx = torch.multinomial(probs, num_samples=1)
+    return top_k_indices[idx]
+```
+
+### Top-p (Nucleus) Sampling
+
+Instead of a fixed $k$, keep the smallest set of tokens whose cumulative probability exceeds $p$:
+
+```python
+def top_p_sample(logits, p=0.9, temperature=1.0):
+    """Nucleus sampling: keep tokens until cumulative probability >= p."""
+    logits = logits / temperature
+    probs = torch.softmax(logits, dim=-1)
+
+    # Sort in descending probability order
+    sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+    cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+
+    # Find cutoff: remove tokens where cumulative prob exceeds p
+    sorted_mask = cumulative_probs - sorted_probs >= p
+    sorted_probs[sorted_mask] = 0.0
+
+    # Re-normalize
+    sorted_probs = sorted_probs / sorted_probs.sum()
+
+    # Sample
+    idx = torch.multinomial(sorted_probs, num_samples=1)
+    return sorted_indices[idx]
+```
+
+<CommonMistake>
+Do not set both temperature and top-p to extreme values simultaneously. For example, temperature=2.0 with top_p=0.99 will produce very random, often incoherent text. For most applications, use temperature between 0.0-0.7 for factual tasks and 0.7-1.0 for creative tasks, with top_p around 0.9-0.95. When using temperature=0 (greedy), top-p and top-k have no effect.
+</CommonMistake>
+
+### KV Cache: Making Inference Fast
+
+A naive implementation recomputes the entire transformer for every new token. The **KV cache** optimization stores the key and value matrices from previous positions, so each new token only needs to compute its own Q, K, V and attend to the cached K and V from all previous tokens.
+
+This reduces the per-token cost from $O(n \cdot L \cdot d^2)$ to approximately $O(L \cdot d^2)$ for the feed-forward layers, with the attention computation being the main remaining cost. The trade-off is memory: the KV cache grows linearly with sequence length.
+
+## The Training Pipeline Summary
+
+Here is the complete pipeline for creating a modern LLM:
+
+```
+1. DATA COLLECTION
+   Web crawl, books, code, curated datasets
+   -> Deduplication, filtering, quality scoring
+   -> Trillions of tokens
+
+2. PRETRAINING (weeks/months on thousands of GPUs)
+   Decoder-only transformer + next-token prediction loss
+   -> Strong text completion, broad knowledge
+   -> NOT yet a useful assistant
+
+3. SUPERVISED FINE-TUNING (SFT)
+   Human-written prompt/response demonstrations
+   -> Learns the format of helpful assistant responses
+
+4. ALIGNMENT (RLHF, Constitutional AI, DPO)
+   Human or AI preference comparisons
+   -> Learns to be helpful, harmless, honest
+
+5. EVALUATION & RED-TEAMING
+   Benchmarks, safety testing, adversarial probing
+   -> Identify weaknesses before deployment
+```
+
+## Summary
+
+- Modern LLMs use **decoder-only transformers** with causal attention, trained to predict the next token.
+- **Subword tokenization** (BPE, SentencePiece) balances vocabulary size, sequence length, and OOV handling.
+- **Pretraining** on trillions of tokens with next-token prediction creates a powerful base model.
+- **Scaling laws** show that model performance improves predictably with more parameters and data.
+- **Alignment** (SFT + RLHF/Constitutional AI/DPO) transforms a raw text predictor into a useful, safe assistant.
+- **LoRA** and other PEFT methods enable efficient fine-tuning with minimal parameters.
+- **Inference** sampling parameters (temperature, top-k, top-p) control the trade-off between coherence and creativity.
+- The **KV cache** is essential for efficient autoregressive generation.
+
+In the next lesson, we will explore how to **build with LLMs**: using embeddings for retrieval, implementing RAG pipelines, and architecting real AI applications.

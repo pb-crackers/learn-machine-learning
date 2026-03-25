@@ -1,0 +1,501 @@
+---
+module: 1
+lesson: 3
+title: "Calculus Intuition (Gradients & Optimization)"
+description: "Derivatives, gradients, and gradient descent"
+prerequisites: ["1.2"]
+estimatedMinutes: 55
+---
+
+# Calculus Intuition (Gradients & Optimization)
+
+You do not need to be a calculus expert to do machine learning. But you do need to understand one core idea: **a derivative tells you how to change your inputs to improve your output**. This single concept powers virtually every ML training algorithm.
+
+In this lesson, we build from derivatives up to gradient descent — the algorithm that trains nearly every modern ML model.
+
+---
+
+## Derivatives: The Slope of a Function
+
+A **derivative** measures the rate of change of a function. If $f(x)$ gives you your position at time $x$, the derivative $f'(x)$ gives you your velocity — how fast you are moving and in which direction.
+
+$$
+f'(x) = \lim_{h \to 0} \frac{f(x + h) - f(x)}{h}
+$$
+
+Intuitively, zoom in on any smooth curve far enough and it looks like a straight line. The derivative is the slope of that line.
+
+**Example**: For $f(x) = x^2$:
+
+$$
+f'(x) = 2x
+$$
+
+- At $x = 3$: slope is $f'(3) = 6$ (steep upward)
+- At $x = 0$: slope is $f'(0) = 0$ (flat — a minimum!)
+- At $x = -2$: slope is $f'(-2) = -4$ (downward)
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+x = np.linspace(-4, 4, 200)
+y = x ** 2
+
+# Numerical derivative (finite difference)
+def numerical_derivative(f, x, h=1e-7):
+    return (f(x + h) - f(x)) / h
+
+f = lambda x: x ** 2
+slopes = [numerical_derivative(f, xi) for xi in x]
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+axes[0].plot(x, y, 'b-', linewidth=2)
+axes[0].set_title("f(x) = x²")
+axes[0].set_xlabel("x")
+axes[0].set_ylabel("f(x)")
+axes[0].grid(True)
+
+# Show tangent line at x=2
+x0 = 2
+y0 = f(x0)
+slope = 2 * x0  # analytical derivative
+tangent_x = np.linspace(0.5, 3.5, 50)
+tangent_y = y0 + slope * (tangent_x - x0)
+axes[0].plot(tangent_x, tangent_y, 'r--', label=f'Tangent at x={x0} (slope={slope})')
+axes[0].plot(x0, y0, 'ro', markersize=8)
+axes[0].legend()
+
+axes[1].plot(x, slopes, 'g-', linewidth=2)
+axes[1].set_title("f'(x) = 2x (derivative)")
+axes[1].set_xlabel("x")
+axes[1].set_ylabel("f'(x)")
+axes[1].axhline(y=0, color='black', linewidth=0.5)
+axes[1].grid(True)
+plt.tight_layout()
+plt.show()
+```
+
+<KeyTakeaway>
+The derivative tells you two things: **direction** (is the function increasing or decreasing?) and **magnitude** (how steeply?). To find a minimum, we move in the direction opposite to the derivative — if the slope is positive, move left; if negative, move right. This is the essence of gradient descent.
+</KeyTakeaway>
+
+### Common Derivatives for ML
+
+You do not need to memorize these, but they appear frequently:
+
+| Function | Derivative | Where it shows up |
+|----------|-----------|-------------------|
+| $f(x) = x^n$ | $f'(x) = nx^{n-1}$ | Polynomial features |
+| $f(x) = e^x$ | $f'(x) = e^x$ | Softmax, exponential |
+| $f(x) = \ln(x)$ | $f'(x) = 1/x$ | Log loss, cross-entropy |
+| $f(x) = \frac{1}{1+e^{-x}}$ | $f'(x) = f(x)(1-f(x))$ | Sigmoid activation |
+
+<MathNote>
+The **chain rule** is how derivatives compose. If $y = f(g(x))$, then:
+
+$$
+\frac{dy}{dx} = \frac{df}{dg} \cdot \frac{dg}{dx}
+$$
+
+This is the backbone of **backpropagation** in neural networks — computing how the loss changes with respect to each weight by chaining derivatives through every layer.
+</MathNote>
+
+---
+
+## Partial Derivatives: Multiple Variables
+
+Real ML models have many parameters, not just one. A **partial derivative** measures how the function changes when you tweak *one* variable while holding all others fixed.
+
+For $f(x, y) = x^2 + 3xy + y^2$:
+
+$$
+\frac{\partial f}{\partial x} = 2x + 3y \qquad \frac{\partial f}{\partial y} = 3x + 2y
+$$
+
+```python
+# Numerical partial derivatives
+def partial_derivative(f, point, var_index, h=1e-7):
+    """Compute partial derivative of f at point with respect to variable var_index."""
+    point_plus = point.copy()
+    point_plus[var_index] += h
+    return (f(point_plus) - f(point)) / h
+
+# f(x, y) = x² + 3xy + y²
+f = lambda p: p[0]**2 + 3*p[0]*p[1] + p[1]**2
+
+point = np.array([1.0, 2.0])
+
+df_dx = partial_derivative(f, point, 0)
+df_dy = partial_derivative(f, point, 1)
+
+print(f"∂f/∂x at (1,2) = {df_dx:.4f}")  # 2(1) + 3(2) = 8
+print(f"∂f/∂y at (1,2) = {df_dy:.4f}")  # 3(1) + 2(2) = 7
+```
+
+---
+
+## The Gradient Vector
+
+The **gradient** collects all partial derivatives into a single vector:
+
+$$
+\nabla f = \begin{bmatrix} \frac{\partial f}{\partial x_1} \\ \frac{\partial f}{\partial x_2} \\ \vdots \\ \frac{\partial f}{\partial x_n} \end{bmatrix}
+$$
+
+The gradient has a beautiful geometric interpretation: **it points in the direction of steepest increase** of the function. Its magnitude tells you how steep that increase is.
+
+To find a minimum, we move in the **opposite** direction of the gradient — the direction of steepest *decrease*.
+
+```python
+def compute_gradient(f, point, h=1e-7):
+    """Compute the gradient of f at the given point."""
+    gradient = np.zeros_like(point)
+    for i in range(len(point)):
+        point_plus = point.copy()
+        point_plus[i] += h
+        gradient[i] = (f(point_plus) - f(point)) / h
+    return gradient
+
+f = lambda p: p[0]**2 + p[1]**2  # simple bowl: minimum at (0, 0)
+
+point = np.array([3.0, 4.0])
+grad = compute_gradient(f, point)
+print(f"Gradient at (3, 4): {grad}")  # [6., 8.] — points away from the minimum
+print(f"Move direction: {-grad}")     # [-6., -8.] — toward the minimum!
+```
+
+<WhyThisMatters>
+When you train a neural network with millions of parameters, gradient descent computes the gradient of the loss function with respect to *every single parameter*, then nudges each parameter in the direction that reduces the loss. The gradient is a vector in million-dimensional space — one component per parameter.
+</WhyThisMatters>
+
+---
+
+## Gradient Descent: The Training Algorithm
+
+**Gradient descent** is the optimization algorithm that trains most ML models. The idea is simple:
+
+1. Start with random parameter values
+2. Compute the gradient of the loss function
+3. Take a small step opposite to the gradient
+4. Repeat until the loss stops decreasing
+
+The update rule:
+
+$$
+\mathbf{w}_{t+1} = \mathbf{w}_t - \alpha \, \nabla L(\mathbf{w}_t)
+$$
+
+where:
+- $\mathbf{w}_t$ is the current parameter vector
+- $\alpha$ is the **learning rate** (step size)
+- $\nabla L(\mathbf{w}_t)$ is the gradient of the loss at the current position
+
+### Visual Walkthrough: 1D Gradient Descent
+
+Let us watch gradient descent find the minimum of $f(x) = (x - 3)^2 + 1$:
+
+```python
+def gradient_descent_1d(f, df, x0, lr=0.1, n_steps=20):
+    """Run gradient descent and record the path."""
+    path = [x0]
+    x = x0
+    for _ in range(n_steps):
+        grad = df(x)
+        x = x - lr * grad
+        path.append(x)
+    return np.array(path)
+
+# f(x) = (x-3)² + 1, minimum at x=3
+f = lambda x: (x - 3)**2 + 1
+df = lambda x: 2 * (x - 3)
+
+# Start at x=8
+path = gradient_descent_1d(f, df, x0=8.0, lr=0.1, n_steps=25)
+
+# Visualize
+x_range = np.linspace(-1, 10, 200)
+plt.figure(figsize=(10, 5))
+plt.plot(x_range, f(x_range), 'b-', linewidth=2, label='f(x) = (x-3)² + 1')
+plt.plot(path, f(path), 'ro-', markersize=6, label='Gradient descent path')
+plt.plot(path[0], f(path[0]), 'gs', markersize=12, label=f'Start (x={path[0]:.1f})')
+plt.plot(path[-1], f(path[-1]), 'r*', markersize=15, label=f'End (x={path[-1]:.2f})')
+plt.xlabel('x')
+plt.ylabel('f(x)')
+plt.title('Gradient Descent Finding the Minimum')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+print(f"Started at x = {path[0]:.1f}")
+print(f"After 25 steps: x = {path[-1]:.6f} (true minimum at x = 3)")
+```
+
+### 2D Gradient Descent
+
+Now with two parameters — visualized as a contour plot:
+
+```python
+def gradient_descent_2d(grad_fn, start, lr=0.1, n_steps=50):
+    """Gradient descent in 2D, recording the path."""
+    path = [start.copy()]
+    point = start.copy()
+    for _ in range(n_steps):
+        grad = grad_fn(point)
+        point = point - lr * grad
+        path.append(point.copy())
+    return np.array(path)
+
+# f(x, y) = x² + 2y² — elliptical bowl, minimum at (0, 0)
+f_2d = lambda p: p[0]**2 + 2*p[1]**2
+grad_2d = lambda p: np.array([2*p[0], 4*p[1]])
+
+start = np.array([4.0, 3.0])
+path = gradient_descent_2d(grad_2d, start, lr=0.1, n_steps=30)
+
+# Contour plot
+x_grid = np.linspace(-5, 5, 100)
+y_grid = np.linspace(-4, 4, 100)
+X, Y = np.meshgrid(x_grid, y_grid)
+Z = X**2 + 2*Y**2
+
+plt.figure(figsize=(8, 6))
+plt.contour(X, Y, Z, levels=20, cmap='viridis')
+plt.colorbar(label='f(x, y)')
+plt.plot(path[:, 0], path[:, 1], 'ro-', markersize=4, linewidth=1.5, label='GD path')
+plt.plot(path[0, 0], path[0, 1], 'gs', markersize=10, label='Start')
+plt.plot(path[-1, 0], path[-1, 1], 'r*', markersize=15, label='End')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.title('2D Gradient Descent on f(x,y) = x² + 2y²')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()
+```
+
+---
+
+## The Learning Rate: Getting It Right
+
+The learning rate $\alpha$ controls the step size. Getting it right is crucial:
+
+- **Too small**: Convergence is painfully slow. You waste compute.
+- **Too large**: Steps overshoot the minimum. The loss oscillates or even diverges.
+- **Just right**: Steady convergence to the minimum.
+
+```python
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+f = lambda x: (x - 3)**2 + 1
+df = lambda x: 2 * (x - 3)
+x_range = np.linspace(-1, 10, 200)
+
+for ax, lr, title in zip(axes,
+    [0.01, 0.1, 0.9],
+    ["Too Small (lr=0.01)", "Just Right (lr=0.1)", "Too Large (lr=0.9)"]):
+
+    path = gradient_descent_1d(f, df, x0=8.0, lr=lr, n_steps=25)
+    ax.plot(x_range, f(x_range), 'b-', linewidth=2)
+    ax.plot(path, f(path), 'ro-', markersize=4)
+    ax.set_title(title)
+    ax.set_xlabel('x')
+    ax.set_ylabel('f(x)')
+    ax.grid(True)
+
+plt.tight_layout()
+plt.show()
+```
+
+<CommonMistake>
+A common beginner mistake is setting the learning rate too high and seeing the loss *increase* during training. If your loss is going up or oscillating wildly, the first thing to try is reducing the learning rate by a factor of 10. Start with a small learning rate and increase it, rather than the other way around.
+</CommonMistake>
+
+---
+
+## Loss Functions: What Are We Minimizing?
+
+Gradient descent needs a function to minimize. In ML, this is the **loss function** (also called cost function or objective function). It measures how wrong the model's predictions are.
+
+### Mean Squared Error (MSE)
+
+For regression (predicting continuous values):
+
+$$
+L(\mathbf{w}) = \frac{1}{n} \sum_{i=1}^{n} (y_i - \hat{y}_i)^2
+$$
+
+where $y_i$ is the true value and $\hat{y}_i = \mathbf{w} \cdot \mathbf{x}_i + b$ is the prediction.
+
+```python
+# Simple linear regression with gradient descent
+np.random.seed(42)
+
+# Generate data: y = 3x + 7 + noise
+X = np.random.uniform(0, 10, 100)
+y_true = 3 * X + 7 + np.random.normal(0, 2, 100)
+
+# Initialize parameters
+w = 0.0  # weight (slope)
+b = 0.0  # bias (intercept)
+lr = 0.001
+n = len(X)
+
+losses = []
+for epoch in range(200):
+    # Predictions
+    y_pred = w * X + b
+
+    # Loss (MSE)
+    loss = np.mean((y_true - y_pred) ** 2)
+    losses.append(loss)
+
+    # Gradients
+    dw = -2/n * np.sum(X * (y_true - y_pred))
+    db = -2/n * np.sum(y_true - y_pred)
+
+    # Update
+    w -= lr * dw
+    b -= lr * db
+
+print(f"Learned: y = {w:.2f}x + {b:.2f}")  # Should be close to y = 3x + 7
+print(f"Final loss: {losses[-1]:.4f}")
+
+# Plot learning curve
+plt.figure(figsize=(8, 4))
+plt.plot(losses)
+plt.xlabel('Epoch')
+plt.ylabel('MSE Loss')
+plt.title('Loss Decreasing During Training')
+plt.grid(True)
+plt.show()
+```
+
+<MathNote>
+The gradient of MSE with respect to weight $w_j$ is:
+
+$$
+\frac{\partial L}{\partial w_j} = -\frac{2}{n} \sum_{i=1}^{n} x_{ij} (y_i - \hat{y}_i)
+$$
+
+Notice the structure: the gradient is proportional to the **error** $(y_i - \hat{y}_i)$ multiplied by the **input** $x_{ij}$. When the error is large, the gradient is large, and the parameter update is big. When the prediction is close to correct, the gradient is small. The model naturally focuses on fixing its biggest mistakes.
+</MathNote>
+
+---
+
+## Variants of Gradient Descent
+
+The version above uses all data points to compute each gradient step. This is called **batch gradient descent**. There are faster alternatives:
+
+### Stochastic Gradient Descent (SGD)
+
+Use a **single random sample** to estimate the gradient:
+
+$$
+\mathbf{w}_{t+1} = \mathbf{w}_t - \alpha \, \nabla L_i(\mathbf{w}_t)
+$$
+
+The gradient estimate is noisy but cheap to compute. On large datasets, SGD can make progress much faster because it updates after every single sample instead of waiting to process the entire dataset.
+
+### Mini-Batch Gradient Descent
+
+The practical middle ground: use a **small batch** (typically 32-256 samples) to estimate the gradient. This is what almost every ML framework uses by default.
+
+```python
+# Mini-batch gradient descent
+batch_size = 16
+w, b = 0.0, 0.0
+lr = 0.01
+losses_mb = []
+
+for epoch in range(100):
+    # Shuffle data each epoch
+    indices = np.random.permutation(n)
+    epoch_loss = 0
+
+    for start in range(0, n, batch_size):
+        batch_idx = indices[start:start + batch_size]
+        X_batch = X[batch_idx]
+        y_batch = y_true[batch_idx]
+        bs = len(X_batch)
+
+        # Forward pass
+        y_pred = w * X_batch + b
+        epoch_loss += np.sum((y_batch - y_pred) ** 2)
+
+        # Gradients on this batch
+        dw = -2/bs * np.sum(X_batch * (y_batch - y_pred))
+        db = -2/bs * np.sum(y_batch - y_pred)
+
+        # Update
+        w -= lr * dw
+        b -= lr * db
+
+    losses_mb.append(epoch_loss / n)
+
+print(f"Mini-batch GD result: y = {w:.2f}x + {b:.2f}")
+```
+
+<KeyTakeaway>
+Gradient descent is the universal training algorithm for ML. The recipe is always the same: (1) define a loss function that measures error, (2) compute the gradient of the loss with respect to each parameter, (3) update parameters in the direction that reduces the loss, (4) repeat. Everything else — Adam, RMSProp, learning rate schedules — is a refinement of this core idea.
+</KeyTakeaway>
+
+---
+
+## Local Minima and Saddle Points
+
+For simple convex functions (like a bowl), gradient descent always finds the global minimum. But real loss landscapes in deep learning are complex and non-convex. They contain:
+
+- **Local minima**: points that are lower than all neighbors but not the lowest overall
+- **Saddle points**: points that are a minimum in some directions but a maximum in others
+
+```python
+# A function with multiple minima
+f_complex = lambda x: x**4 - 4*x**2 + x + 3
+
+x = np.linspace(-3, 3, 300)
+plt.figure(figsize=(10, 5))
+plt.plot(x, f_complex(x), 'b-', linewidth=2)
+plt.title("A Function with Multiple Minima")
+plt.xlabel("x")
+plt.ylabel("f(x)")
+plt.grid(True)
+
+# Mark approximate minima
+from scipy.optimize import minimize_scalar
+# Local minimum near x = -1.5
+res1 = minimize_scalar(f_complex, bounds=(-3, 0), method='bounded')
+# Local minimum near x = 1.4
+res2 = minimize_scalar(f_complex, bounds=(0, 3), method='bounded')
+plt.plot(res1.x, res1.fun, 'rv', markersize=12, label=f'Local min at x={res1.x:.2f}')
+plt.plot(res2.x, res2.fun, 'gv', markersize=12, label=f'Local min at x={res2.x:.2f}')
+plt.legend()
+plt.show()
+```
+
+In practice, modern research has shown that **saddle points** are a bigger problem than local minima for deep networks. SGD's inherent noise actually helps escape saddle points, which is one reason why stochastic methods work so well.
+
+<WhyThisMatters>
+You will sometimes see your training loss get "stuck" — it plateaus and stops improving. This often means the optimizer is near a saddle point or a flat region. Solutions include: increasing the learning rate temporarily, using momentum-based optimizers (like Adam), or restarting with different initialization. Understanding the loss landscape helps you debug training problems.
+</WhyThisMatters>
+
+---
+
+## Summary: The Three Calculus Ideas for ML
+
+1. **Derivatives** tell you the slope — how sensitive the output is to changes in input.
+2. **Gradients** generalize derivatives to multiple dimensions — they point toward the steepest increase.
+3. **Gradient descent** follows the negative gradient to find parameter values that minimize the loss.
+
+Every ML model you will build in this course — linear regression, logistic regression, neural networks — is trained using some form of gradient descent. The math gets more complex, but the intuition remains exactly the same: compute the gradient, take a step, repeat.
+
+---
+
+## Hands-On Lab
+
+Head over to **`labs/lesson-1.3/`** and complete the following exercises:
+
+1. **Implement gradient descent from scratch**: Train a linear regression model on generated data using only NumPy. Plot the loss curve and the learned fit line.
+2. **Learning rate experiment**: Run gradient descent with learning rates of 0.0001, 0.001, 0.01, 0.1, and 1.0. Plot all loss curves on the same chart and observe the effect.
+3. **Visualize the path**: Create a 2D contour plot of a loss function and overlay the gradient descent trajectory. Try different starting points.
+4. **Mini-batch vs. batch**: Compare full-batch and mini-batch gradient descent on the same problem. Plot both loss curves and compare convergence speed and smoothness.

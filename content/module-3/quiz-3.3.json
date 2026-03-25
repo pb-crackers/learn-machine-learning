@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "What is the primary advantage of PyTorch's autograd over manual backpropagation?",
+      "options": [
+        "It makes the model train faster by using optimized matrix multiplication",
+        "It automatically computes gradients for all parameters without manual derivative calculations",
+        "It prevents overfitting by regularizing the gradients",
+        "It guarantees convergence to the global minimum"
+      ],
+      "correct": "B",
+      "explanation": "PyTorch's autograd engine tracks all operations on tensors with requires_grad=True and automatically computes gradients via the chain rule when .backward() is called. This eliminates the need to derive and implement gradients by hand, which is error-prone and does not scale to complex architectures."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "What happens if you forget to call optimizer.zero_grad() in the training loop?",
+      "options": [
+        "The model will not update any weights",
+        "Gradients will accumulate across iterations, leading to incorrect weight updates",
+        "PyTorch will raise a RuntimeError",
+        "The learning rate will automatically adjust to compensate"
+      ],
+      "correct": "B",
+      "explanation": "PyTorch accumulates gradients by default. If you don't zero them before each backward pass, the gradients from previous iterations add to the current ones, causing incorrect and increasingly large weight updates. This is one of the most common PyTorch bugs."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "Why does nn.CrossEntropyLoss expect raw logits rather than softmax probabilities?",
+      "options": [
+        "It does not support probability inputs",
+        "Raw logits are faster to compute",
+        "Combining log-softmax and negative log-likelihood is numerically more stable",
+        "Softmax probabilities use too much memory"
+      ],
+      "correct": "C",
+      "explanation": "nn.CrossEntropyLoss internally applies log_softmax followed by nll_loss. Computing log(softmax(z)) directly (log-sum-exp trick) avoids numerical underflow/overflow that would occur if you computed softmax first (which can produce very small numbers) and then took the logarithm."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What is the purpose of calling model.eval() before inference?",
+      "options": [
+        "It moves the model to CPU for faster inference",
+        "It freezes all model weights so they cannot be updated",
+        "It switches layers like Dropout and BatchNorm to evaluation behavior",
+        "It automatically enables torch.no_grad()"
+      ],
+      "correct": "C",
+      "explanation": "model.eval() sets the model to evaluation mode, which changes the behavior of certain layers. Dropout stops dropping neurons (uses all neurons), and BatchNorm uses running statistics instead of batch statistics. This ensures consistent and deterministic predictions during inference. Note: it does NOT disable gradient computation; you still need torch.no_grad() for that."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "What is the recommended way to save a PyTorch model for later loading?",
+      "options": [
+        "torch.save(model, 'model.pth') to save the entire model object",
+        "torch.save(model.state_dict(), 'model.pth') to save only the parameters",
+        "pickle.dump(model, open('model.pkl', 'wb'))",
+        "model.save('model.h5')"
+      ],
+      "correct": "B",
+      "explanation": "Saving the state_dict() (a dictionary mapping layer names to parameter tensors) is the recommended approach. It is more portable, requires less storage, and is not tied to specific class definitions at save time. When loading, you recreate the model architecture and then load the state dict into it."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "Which of the following correctly describes the relationship between torch.from_numpy() and the original NumPy array?",
+      "options": [
+        "They share memory — modifying one affects the other",
+        "They are completely independent copies",
+        "The NumPy array becomes read-only after conversion",
+        "The PyTorch tensor is always on GPU after conversion"
+      ],
+      "correct": "A",
+      "explanation": "torch.from_numpy() creates a tensor that shares the same underlying memory as the NumPy array. Modifying the NumPy array will change the tensor and vice versa. If you need an independent copy, use torch.tensor(numpy_array) instead."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "In a PyTorch training loop, what is the correct order of operations for the backward pass and weight update?",
+      "options": [
+        "loss.backward() → optimizer.step() → optimizer.zero_grad()",
+        "optimizer.zero_grad() → optimizer.step() → loss.backward()",
+        "optimizer.zero_grad() → loss.backward() → optimizer.step()",
+        "optimizer.step() → loss.backward() → optimizer.zero_grad()"
+      ],
+      "correct": "C",
+      "explanation": "The correct order is: (1) optimizer.zero_grad() to clear old gradients, (2) loss.backward() to compute new gradients via backpropagation, (3) optimizer.step() to update weights using those gradients. Calling them in any other order will produce incorrect results."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "Why should you wrap evaluation code in 'with torch.no_grad():'?",
+      "options": [
+        "It prevents the model from making predictions",
+        "It enables GPU acceleration for inference",
+        "It disables gradient tracking, saving memory and computation",
+        "It locks the model weights to prevent accidental updates"
+      ],
+      "correct": "C",
+      "explanation": "torch.no_grad() disables PyTorch's automatic differentiation engine. Since you don't need gradients during evaluation (no weight updates), this saves memory (no computation graph is stored) and speeds up computation. It is a best practice for any code path that does not require gradient computation."
+    }
+  ]
+}

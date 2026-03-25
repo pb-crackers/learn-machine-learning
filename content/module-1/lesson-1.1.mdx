@@ -1,0 +1,445 @@
+---
+module: 1
+lesson: 1
+title: "Linear Algebra for ML"
+description: "Vectors, matrices, and what they mean for ML"
+prerequisites: ["0.1"]
+estimatedMinutes: 55
+---
+
+# Linear Algebra for ML
+
+Linear algebra is the language of machine learning. Every dataset you will ever work with is a matrix. Every model parameter is a vector. Every prediction is a dot product. You do not need to become a mathematician — but you do need to build a solid intuition for what these operations *mean*.
+
+In this lesson, we will cover vectors, matrices, and the key operations that appear again and again in ML algorithms.
+
+---
+
+## Vectors: The Building Blocks
+
+A **vector** is simply an ordered list of numbers. In ML, vectors show up everywhere:
+
+- A **feature vector** describes one data point. For example, a house might be represented as $[1500, 3, 2, 1985]$ — square footage, bedrooms, bathrooms, and year built.
+- A **weight vector** holds the parameters a model has learned. Each weight tells the model how much to care about a particular feature.
+- A **prediction** is often computed by combining feature and weight vectors.
+
+<MathNote>
+A vector $\mathbf{v}$ in $\mathbb{R}^n$ has $n$ components:
+
+$$
+\mathbf{v} = \begin{bmatrix} v_1 \\ v_2 \\ \vdots \\ v_n \end{bmatrix}
+$$
+
+We typically write column vectors in ML. A row vector is the **transpose**: $\mathbf{v}^T = [v_1, v_2, \ldots, v_n]$.
+</MathNote>
+
+### Vectors in NumPy
+
+```python
+import numpy as np
+
+# A feature vector for a house: [sq_ft, bedrooms, bathrooms, year_built]
+house = np.array([1500, 3, 2, 1985])
+print(house.shape)  # (4,) — a 1D array with 4 elements
+
+# A weight vector (what a trained model might learn)
+weights = np.array([0.1, 50, 30, -0.5])
+
+# Column vector (2D array with one column)
+col_vector = np.array([[1500], [3], [2], [1985]])
+print(col_vector.shape)  # (4, 1)
+```
+
+### Vector Operations
+
+**Addition** — element-wise, vectors must be the same size:
+
+$$
+\begin{bmatrix} 1 \\ 2 \\ 3 \end{bmatrix} + \begin{bmatrix} 4 \\ 5 \\ 6 \end{bmatrix} = \begin{bmatrix} 5 \\ 7 \\ 9 \end{bmatrix}
+$$
+
+**Scalar multiplication** — multiply every element:
+
+$$
+3 \cdot \begin{bmatrix} 1 \\ 2 \\ 3 \end{bmatrix} = \begin{bmatrix} 3 \\ 6 \\ 9 \end{bmatrix}
+$$
+
+**Magnitude (norm)** — the "length" of a vector:
+
+$$
+\|\mathbf{v}\| = \sqrt{v_1^2 + v_2^2 + \cdots + v_n^2}
+$$
+
+```python
+a = np.array([3, 4])
+magnitude = np.linalg.norm(a)
+print(magnitude)  # 5.0 — a classic 3-4-5 triangle
+```
+
+<WhyThisMatters>
+Vector norms appear constantly in ML. **Regularization** penalizes models with large weight vectors (large norms). The **L2 norm** $\|\mathbf{w}\|_2$ is the most common — it is exactly the Euclidean distance formula generalized to $n$ dimensions.
+</WhyThisMatters>
+
+---
+
+## The Dot Product
+
+The **dot product** of two vectors $\mathbf{a}$ and $\mathbf{b}$ is:
+
+$$
+\mathbf{a} \cdot \mathbf{b} = \sum_{i=1}^{n} a_i \, b_i = a_1 b_1 + a_2 b_2 + \cdots + a_n b_n
+$$
+
+This single number is the most important operation in ML. A **linear model's prediction** is literally a dot product:
+
+$$
+\hat{y} = \mathbf{w} \cdot \mathbf{x} + b
+$$
+
+where $\mathbf{w}$ is the weight vector, $\mathbf{x}$ is the feature vector, and $b$ is the bias.
+
+```python
+# Simple linear prediction
+features = np.array([1500, 3, 2])     # house features
+weights = np.array([0.1, 50, 30])     # learned weights
+bias = 10
+
+prediction = np.dot(features, weights) + bias
+# = 1500*0.1 + 3*50 + 2*30 + 10
+# = 150 + 150 + 60 + 10 = 370
+print(prediction)  # 370.0 (predicted price in $1000s)
+```
+
+### Geometric Interpretation
+
+The dot product also measures **similarity** between vectors:
+
+$$
+\mathbf{a} \cdot \mathbf{b} = \|\mathbf{a}\| \, \|\mathbf{b}\| \cos\theta
+$$
+
+where $\theta$ is the angle between the two vectors.
+
+- If $\theta = 0°$ (same direction): $\cos\theta = 1$, dot product is maximized
+- If $\theta = 90°$ (perpendicular): $\cos\theta = 0$, dot product is zero
+- If $\theta = 180°$ (opposite): $\cos\theta = -1$, dot product is negative
+
+**Cosine similarity** normalizes this to $[-1, 1]$:
+
+$$
+\text{cosine\_similarity}(\mathbf{a}, \mathbf{b}) = \frac{\mathbf{a} \cdot \mathbf{b}}{\|\mathbf{a}\| \, \|\mathbf{b}\|}
+$$
+
+```python
+# Cosine similarity — used in NLP, recommendation systems, etc.
+doc1 = np.array([1, 2, 0, 1])  # word frequency vector
+doc2 = np.array([2, 1, 0, 1])  # another document
+
+cosine_sim = np.dot(doc1, doc2) / (np.linalg.norm(doc1) * np.linalg.norm(doc2))
+print(f"Cosine similarity: {cosine_sim:.4f}")  # 0.8944 — very similar!
+```
+
+<KeyTakeaway>
+The dot product is the workhorse of ML. Linear predictions, similarity measures, and attention mechanisms in transformers all boil down to dot products. If you understand one operation deeply, make it this one.
+</KeyTakeaway>
+
+---
+
+## Matrices: Organizing Data
+
+A **matrix** is a 2D grid of numbers. In ML, the two most common matrices are:
+
+1. **Data matrix** $\mathbf{X}$: each row is a data point, each column is a feature. An $m \times n$ matrix means $m$ samples and $n$ features.
+2. **Weight matrix** $\mathbf{W}$: used in neural networks to transform one layer to the next.
+
+$$
+\mathbf{X} = \begin{bmatrix} x_{11} & x_{12} & \cdots & x_{1n} \\ x_{21} & x_{22} & \cdots & x_{2n} \\ \vdots & \vdots & \ddots & \vdots \\ x_{m1} & x_{m2} & \cdots & x_{mn} \end{bmatrix}
+$$
+
+```python
+# 3 houses, 4 features each: [sq_ft, beds, baths, age]
+X = np.array([
+    [1500, 3, 2, 20],
+    [2200, 4, 3, 5],
+    [800,  2, 1, 50]
+])
+print(X.shape)  # (3, 4) — 3 samples, 4 features
+```
+
+### Matrix Transpose
+
+The **transpose** $\mathbf{A}^T$ flips a matrix over its diagonal — rows become columns:
+
+$$
+\mathbf{A} = \begin{bmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \end{bmatrix}, \quad
+\mathbf{A}^T = \begin{bmatrix} 1 & 4 \\ 2 & 5 \\ 3 & 6 \end{bmatrix}
+$$
+
+If $\mathbf{A}$ is $m \times n$, then $\mathbf{A}^T$ is $n \times m$.
+
+```python
+A = np.array([[1, 2, 3],
+              [4, 5, 6]])
+print(A.T)
+# [[1 4]
+#  [2 5]
+#  [3 6]]
+```
+
+### Matrix Multiplication
+
+Matrix multiplication $\mathbf{C} = \mathbf{A} \mathbf{B}$ is defined when the number of **columns** in $\mathbf{A}$ equals the number of **rows** in $\mathbf{B}$.
+
+If $\mathbf{A}$ is $m \times n$ and $\mathbf{B}$ is $n \times p$, then $\mathbf{C}$ is $m \times p$.
+
+Each element $c_{ij}$ is the dot product of row $i$ of $\mathbf{A}$ with column $j$ of $\mathbf{B}$:
+
+$$
+c_{ij} = \sum_{k=1}^{n} a_{ik} \, b_{kj}
+$$
+
+**Worked example:**
+
+$$
+\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}
+\begin{bmatrix} 5 & 6 \\ 7 & 8 \end{bmatrix}
+= \begin{bmatrix}
+1 \cdot 5 + 2 \cdot 7 & 1 \cdot 6 + 2 \cdot 8 \\
+3 \cdot 5 + 4 \cdot 7 & 3 \cdot 6 + 4 \cdot 8
+\end{bmatrix}
+= \begin{bmatrix} 19 & 22 \\ 43 & 50 \end{bmatrix}
+$$
+
+```python
+A = np.array([[1, 2],
+              [3, 4]])
+B = np.array([[5, 6],
+              [7, 8]])
+
+C = A @ B  # The @ operator does matrix multiplication
+print(C)
+# [[19 22]
+#  [43 50]]
+
+# Equivalent: np.matmul(A, B) or np.dot(A, B)
+```
+
+<CommonMistake>
+Do not confuse `*` with `@` in NumPy. The `*` operator performs **element-wise** multiplication, while `@` (or `np.matmul`) performs **matrix** multiplication. They give completely different results:
+
+```python
+print(A * B)  # [[ 5, 12], [21, 32]]  — element-wise
+print(A @ B)  # [[19, 22], [43, 50]]  — matrix multiplication
+```
+</CommonMistake>
+
+### Batch Predictions with Matrix Multiplication
+
+Here is why matrix multiplication matters in practice. Suppose you have 3 houses and a weight vector. Instead of looping, you multiply the entire data matrix by the weight vector at once:
+
+```python
+# Data matrix: 3 houses x 3 features
+X = np.array([
+    [1500, 3, 2],
+    [2200, 4, 3],
+    [800,  2, 1]
+])
+
+# Weight vector
+w = np.array([0.1, 50, 30])
+
+# ALL predictions at once — no Python loop needed
+predictions = X @ w
+print(predictions)  # [310. 460. 140.]
+```
+
+This is vastly faster than a Python loop because NumPy delegates the computation to optimized C/Fortran libraries. This pattern — expressing computation as matrix operations — is the core reason ML can scale to millions of data points.
+
+---
+
+## Geometric Intuition: Matrices as Transformations
+
+A matrix can be thought of as a **transformation** that moves, rotates, scales, or shears vectors. When you multiply a matrix $\mathbf{A}$ by a vector $\mathbf{v}$, you get a new vector $\mathbf{A}\mathbf{v}$ that has been transformed.
+
+**Scaling matrix:**
+
+$$
+\begin{bmatrix} 2 & 0 \\ 0 & 3 \end{bmatrix} \begin{bmatrix} 1 \\ 1 \end{bmatrix} = \begin{bmatrix} 2 \\ 3 \end{bmatrix}
+$$
+
+This stretches the $x$-component by 2 and the $y$-component by 3.
+
+**Rotation matrix** (rotate by angle $\theta$):
+
+$$
+\mathbf{R}(\theta) = \begin{bmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{bmatrix}
+$$
+
+```python
+import matplotlib.pyplot as plt
+
+# Original points — a simple square
+square = np.array([[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]).T  # 2x5 matrix
+
+# Rotation by 45 degrees
+theta = np.radians(45)
+R = np.array([[np.cos(theta), -np.sin(theta)],
+              [np.sin(theta),  np.cos(theta)]])
+
+rotated = R @ square  # apply transformation
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+axes[0].plot(square[0], square[1], 'b-o')
+axes[0].set_title("Original")
+axes[0].set_xlim(-1.5, 1.5); axes[0].set_ylim(-1.5, 1.5)
+axes[0].set_aspect('equal'); axes[0].grid(True)
+
+axes[1].plot(rotated[0], rotated[1], 'r-o')
+axes[1].set_title("Rotated 45°")
+axes[1].set_xlim(-1.5, 1.5); axes[1].set_ylim(-1.5, 1.5)
+axes[1].set_aspect('equal'); axes[1].grid(True)
+plt.tight_layout()
+plt.show()
+```
+
+<WhyThisMatters>
+In neural networks, each layer applies a matrix multiplication followed by a nonlinear function. The matrix multiplication is a **linear transformation** — it rotates, scales, and projects the data into a new space. Stacking many such transformations lets neural networks learn incredibly complex mappings from inputs to outputs.
+</WhyThisMatters>
+
+---
+
+## The Identity Matrix and Inverse
+
+The **identity matrix** $\mathbf{I}$ is the matrix equivalent of the number 1. Multiplying any matrix by $\mathbf{I}$ leaves it unchanged:
+
+$$
+\mathbf{I}_3 = \begin{bmatrix} 1 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & 1 \end{bmatrix}, \quad \mathbf{A} \mathbf{I} = \mathbf{I} \mathbf{A} = \mathbf{A}
+$$
+
+The **inverse** $\mathbf{A}^{-1}$ undoes the transformation:
+
+$$
+\mathbf{A} \mathbf{A}^{-1} = \mathbf{A}^{-1} \mathbf{A} = \mathbf{I}
+$$
+
+Not all matrices have inverses (just like you cannot divide by zero). A matrix without an inverse is called **singular**.
+
+```python
+A = np.array([[2, 1],
+              [5, 3]])
+
+A_inv = np.linalg.inv(A)
+print(A_inv)
+# [[ 3. -1.]
+#  [-5.  2.]]
+
+# Verify: A @ A_inv should equal identity
+print(A @ A_inv)
+# [[1. 0.]
+#  [0. 1.]]
+```
+
+<MathNote>
+In linear regression, the **closed-form solution** (Normal Equation) uses the inverse directly:
+
+$$
+\mathbf{w} = (\mathbf{X}^T \mathbf{X})^{-1} \mathbf{X}^T \mathbf{y}
+$$
+
+This formula computes the optimal weights in one step. You will see this in Module 2 when we study linear regression.
+</MathNote>
+
+---
+
+## Eigenvalues and Eigenvectors (Conceptual)
+
+An **eigenvector** of a matrix $\mathbf{A}$ is a special vector that, when transformed by $\mathbf{A}$, only gets scaled — its direction does not change:
+
+$$
+\mathbf{A} \mathbf{v} = \lambda \mathbf{v}
+$$
+
+Here $\mathbf{v}$ is the eigenvector and $\lambda$ (lambda) is the **eigenvalue** — the scaling factor.
+
+Think of it this way: most vectors get rotated and scaled when you multiply by a matrix. Eigenvectors are the "special directions" that only get scaled.
+
+```python
+A = np.array([[4, 1],
+              [2, 3]])
+
+eigenvalues, eigenvectors = np.linalg.eig(A)
+print("Eigenvalues:", eigenvalues)    # [5. 2.]
+print("Eigenvectors:\n", eigenvectors)
+
+# Verify: A @ v should equal lambda * v
+v = eigenvectors[:, 0]   # first eigenvector
+lam = eigenvalues[0]     # first eigenvalue
+print("A @ v  =", A @ v)
+print("λ * v  =", lam * v)
+# These should be equal (or very close due to floating point)
+```
+
+### Why Eigenvalues Matter for ML
+
+You do not need to compute eigenvalues by hand. But the concept matters because:
+
+1. **PCA (Principal Component Analysis)** finds the eigenvectors of the covariance matrix to identify the directions of maximum variance in your data. This is the most common dimensionality reduction technique.
+2. **Spectral clustering** uses eigenvalues of similarity matrices to find clusters.
+3. **Stability analysis** — eigenvalues tell you whether iterative algorithms (like gradient descent) will converge.
+
+<KeyTakeaway>
+Eigenvectors point in the directions that a matrix "naturally" stretches data. Eigenvalues tell you *how much* stretching occurs in each direction. PCA uses exactly this idea: find the directions where your data varies most and project onto those directions to reduce dimensionality.
+</KeyTakeaway>
+
+---
+
+## Putting It All Together: A Mini Example
+
+Let us walk through a realistic scenario. Suppose you have exam scores for 4 students across 3 subjects, and you want to compute a weighted grade:
+
+```python
+import numpy as np
+
+# 4 students, 3 subjects: [Math, Science, English]
+scores = np.array([
+    [85, 90, 78],
+    [92, 88, 95],
+    [76, 65, 80],
+    [88, 92, 84]
+])
+
+# Subject weights (sum to 1)
+weights = np.array([0.4, 0.35, 0.25])
+
+# Weighted grades for all students at once
+grades = scores @ weights
+print("Weighted grades:", grades)
+# [83.1, 91.55, 73.75, 87.4]
+
+# Transpose to get subjects as rows
+print("Subjects as rows:\n", scores.T)
+# Shape changes from (4, 3) to (3, 4)
+
+# Covariance matrix — how subjects relate to each other
+cov_matrix = np.cov(scores.T)
+print("Covariance matrix:\n", cov_matrix)
+
+# Eigendecomposition of covariance — this IS PCA
+eigenvalues, eigenvectors = np.linalg.eig(cov_matrix)
+print("Variance explained by each principal component:", eigenvalues)
+```
+
+This example connects every concept in this lesson: vectors (weights, grades), matrices (scores), matrix multiplication (batch computation), transpose (reshaping for covariance), and eigendecomposition (PCA).
+
+---
+
+## Hands-On Lab
+
+Head over to **`labs/lesson-1.1/`** and complete the following exercises:
+
+1. **Matrix operations**: Create data matrices and weight vectors, then compute predictions using both loops and matrix multiplication. Compare the speed difference.
+2. **2D transformations**: Build rotation, scaling, and shear matrices. Apply them to a set of 2D points and visualize the before/after with matplotlib.
+3. **Cosine similarity**: Given a set of document vectors, compute the pairwise cosine similarity matrix.
+4. **Mini-PCA**: Compute the covariance matrix of a dataset, find its eigenvalues/eigenvectors, and project the data onto the top 2 principal components.
+
+These exercises reinforce the core operations you will use throughout the rest of this course. Focus on building intuition — use `print` and plots liberally to see what each operation does.

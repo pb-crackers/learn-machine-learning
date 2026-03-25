@@ -1,0 +1,540 @@
+---
+module: 5
+lesson: 2
+title: "Phase 2: Model Building & Training"
+description: "Baseline model, neural network, and experimentation"
+prerequisites: ["5.1"]
+estimatedMinutes: 120
+---
+
+# Phase 2: Model Building & Training
+
+With clean, well-understood data from Phase 1, you are now ready to build models. This phase
+follows a disciplined workflow: establish a baseline, build a neural network, compare rigorously,
+and iterate with experiments. Every decision you make should be justified by validation set
+performance, not intuition.
+
+<WhyThisMatters>
+Beginning practitioners jump straight to complex models. Professionals always start with a
+simple baseline. The baseline tells you what "good enough" looks like, catches data pipeline
+bugs early, and gives you a reference point so you know whether your fancy neural network is
+actually adding value or just adding complexity.
+</WhyThisMatters>
+
+## Step 1: Load the Processed Data
+
+Pick up exactly where Phase 1 left off.
+
+```python
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import joblib
+
+# Load splits
+X_train = pd.read_csv("data/processed/X_train.csv")
+X_val = pd.read_csv("data/processed/X_val.csv")
+X_test = pd.read_csv("data/processed/X_test.csv")
+y_train = pd.read_csv("data/processed/y_train.csv").squeeze()
+y_val = pd.read_csv("data/processed/y_val.csv").squeeze()
+y_test = pd.read_csv("data/processed/y_test.csv").squeeze()
+
+print(f"Training features shape: {X_train.shape}")
+print(f"Number of classes: {y_train.nunique()}")
+```
+
+## Step 2: Classical ML Baseline
+
+Build the simplest reasonable model for your task. This is not throwaway work — many production
+ML systems use classical models because they are fast, interpretable, and hard to beat on
+tabular data.
+
+### For Classification
+
+```python
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    classification_report, confusion_matrix, ConfusionMatrixDisplay
+)
+
+# Logistic Regression baseline
+lr_model = LogisticRegression(max_iter=1000, random_state=42)
+lr_model.fit(X_train, y_train)
+
+# Predictions on validation set
+y_val_pred = lr_model.predict(X_val)
+
+print("=== Logistic Regression Baseline ===")
+print(classification_report(y_val, y_val_pred))
+
+# Confusion matrix
+cm = confusion_matrix(y_val, y_val_pred)
+disp = ConfusionMatrixDisplay(cm)
+disp.plot(cmap="Blues")
+plt.title("Logistic Regression — Validation Set")
+plt.savefig("plots/baseline_confusion_matrix.png", dpi=150)
+plt.show()
+```
+
+### For Regression
+
+```python
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
+# Linear Regression baseline
+lr_model = LinearRegression()
+lr_model.fit(X_train, y_train)
+
+y_val_pred = lr_model.predict(X_val)
+
+rmse = np.sqrt(mean_squared_error(y_val, y_val_pred))
+mae = mean_absolute_error(y_val, y_val_pred)
+r2 = r2_score(y_val, y_val_pred)
+
+print("=== Linear Regression Baseline ===")
+print(f"RMSE: {rmse:.4f}")
+print(f"MAE:  {mae:.4f}")
+print(f"R2:   {r2:.4f}")
+```
+
+### A Stronger Baseline: Random Forest
+
+```python
+# Random Forest gives you a strong non-linear baseline
+rf_model = RandomForestClassifier(  # or RandomForestRegressor
+    n_estimators=200,
+    max_depth=10,
+    random_state=42,
+    n_jobs=-1
+)
+rf_model.fit(X_train, y_train)
+y_val_pred_rf = rf_model.predict(X_val)
+
+# Record metrics using the same functions as above
+print("=== Random Forest Baseline ===")
+# ... (use same metric code as above)
+```
+
+### Record Baseline Results
+
+Create a results tracking structure. You will add to this as you build more models.
+
+```python
+results = {
+    "model": [],
+    "val_metric": [],  # Use your primary metric: F1, RMSE, etc.
+    "notes": []
+}
+
+def log_result(model_name, metric_value, notes=""):
+    results["model"].append(model_name)
+    results["val_metric"].append(metric_value)
+    results["notes"].append(notes)
+    print(f"Logged: {model_name} -> {metric_value:.4f}")
+
+# Log baselines
+log_result("LogisticRegression", f1_score(y_val, y_val_pred, average="weighted"))
+log_result("RandomForest", f1_score(y_val, y_val_pred_rf, average="weighted"))
+```
+
+<KeyTakeaway>
+Write down baseline numbers before building anything else. Your neural network must beat these
+numbers to justify its complexity. If it cannot, the classical model is the better choice.
+</KeyTakeaway>
+
+## Step 3: Design Your Neural Network
+
+Now build a custom neural network in PyTorch. Start simple, then add complexity only when
+the data tells you to.
+
+### Convert Data to Tensors
+
+```python
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
+# Convert to tensors
+X_train_t = torch.tensor(X_train.values, dtype=torch.float32)
+y_train_t = torch.tensor(y_train.values, dtype=torch.float32)  # or torch.long for classification
+X_val_t = torch.tensor(X_val.values, dtype=torch.float32)
+y_val_t = torch.tensor(y_val.values, dtype=torch.float32)
+
+# Create DataLoaders
+train_dataset = TensorDataset(X_train_t, y_train_t)
+val_dataset = TensorDataset(X_val_t, y_val_t)
+
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=128, shuffle=False)
+```
+
+### Define the Model
+
+Start with a straightforward feedforward architecture. You can get fancy later — right now the
+goal is a working pipeline.
+
+```python
+import torch.nn as nn
+
+class TabularNet(nn.Module):
+    def __init__(self, input_dim, hidden_dims, output_dim, dropout_rate=0.3):
+        super().__init__()
+
+        layers = []
+        prev_dim = input_dim
+
+        for h_dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, h_dim))
+            layers.append(nn.BatchNorm1d(h_dim))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(dropout_rate))
+            prev_dim = h_dim
+
+        layers.append(nn.Linear(prev_dim, output_dim))
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.network(x)
+
+# Instantiate
+input_dim = X_train.shape[1]
+hidden_dims = [128, 64, 32]  # start with 3 hidden layers
+output_dim = 1  # 1 for binary classification (with BCE) or regression; num_classes for multi-class
+
+model = TabularNet(input_dim, hidden_dims, output_dim).to(device)
+print(model)
+print(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
+```
+
+<CommonMistake>
+Do not start with a massive network. For tabular data with fewer than 50 features, a network
+with 3 hidden layers of 128/64/32 units is a reasonable starting point. Deeper or wider networks
+on small tabular datasets almost always overfit. Let the validation loss guide you.
+</CommonMistake>
+
+### Loss Function and Optimizer
+
+```python
+# For binary classification
+criterion = nn.BCEWithLogitsLoss()
+
+# For multi-class classification
+# criterion = nn.CrossEntropyLoss()
+
+# For regression
+# criterion = nn.MSELoss()
+
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+
+# Learning rate scheduler: reduce LR when validation loss plateaus
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer, mode="min", factor=0.5, patience=5, verbose=True
+)
+```
+
+## Step 4: Training Loop
+
+Write a complete training loop with validation monitoring and early stopping.
+
+```python
+def train_one_epoch(model, loader, criterion, optimizer, device):
+    model.train()
+    total_loss = 0
+    n_batches = 0
+
+    for X_batch, y_batch in loader:
+        X_batch = X_batch.to(device)
+        y_batch = y_batch.to(device).unsqueeze(1)  # shape: (batch, 1)
+
+        optimizer.zero_grad()
+        outputs = model(X_batch)
+        loss = criterion(outputs, y_batch)
+        loss.backward()
+
+        # Gradient clipping to prevent exploding gradients
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+        optimizer.step()
+        total_loss += loss.item()
+        n_batches += 1
+
+    return total_loss / n_batches
+
+
+def evaluate(model, loader, criterion, device):
+    model.eval()
+    total_loss = 0
+    all_preds = []
+    all_targets = []
+    n_batches = 0
+
+    with torch.no_grad():
+        for X_batch, y_batch in loader:
+            X_batch = X_batch.to(device)
+            y_batch = y_batch.to(device).unsqueeze(1)
+
+            outputs = model(X_batch)
+            loss = criterion(outputs, y_batch)
+            total_loss += loss.item()
+            n_batches += 1
+
+            # For classification: convert logits to predictions
+            preds = torch.sigmoid(outputs).cpu().numpy()
+            all_preds.append(preds)
+            all_targets.append(y_batch.cpu().numpy())
+
+    avg_loss = total_loss / n_batches
+    all_preds = np.concatenate(all_preds)
+    all_targets = np.concatenate(all_targets)
+
+    return avg_loss, all_preds, all_targets
+```
+
+### The Training Loop with Early Stopping
+
+```python
+NUM_EPOCHS = 100
+PATIENCE = 10
+best_val_loss = float("inf")
+patience_counter = 0
+train_losses = []
+val_losses = []
+
+for epoch in range(NUM_EPOCHS):
+    train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
+    val_loss, val_preds, val_targets = evaluate(model, val_loader, criterion, device)
+
+    train_losses.append(train_loss)
+    val_losses.append(val_loss)
+
+    scheduler.step(val_loss)
+
+    # Early stopping check
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        patience_counter = 0
+        torch.save(model.state_dict(), "models/best_model.pt")
+    else:
+        patience_counter += 1
+
+    if (epoch + 1) % 5 == 0 or patience_counter == 0:
+        print(
+            f"Epoch {epoch+1:3d} | "
+            f"Train Loss: {train_loss:.4f} | "
+            f"Val Loss: {val_loss:.4f} | "
+            f"{'*' if patience_counter == 0 else ''}"
+        )
+
+    if patience_counter >= PATIENCE:
+        print(f"Early stopping at epoch {epoch + 1}")
+        break
+
+# Load best model
+model.load_state_dict(torch.load("models/best_model.pt"))
+```
+
+### Plot the Learning Curves
+
+```python
+plt.figure(figsize=(10, 5))
+plt.plot(train_losses, label="Train Loss")
+plt.plot(val_losses, label="Validation Loss")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.title("Training and Validation Loss")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.savefig("plots/learning_curves.png", dpi=150)
+plt.show()
+```
+
+<WhyThisMatters>
+Learning curves are the most important diagnostic tool you have. They tell you whether your model
+is underfitting (both curves are high), overfitting (training loss is low but validation loss is
+high), or well-tuned (both curves converge to a similar low value). Every training run should
+produce a learning curve plot.
+</WhyThisMatters>
+
+## Step 5: Evaluate and Compare Against Baseline
+
+Load the best model checkpoint and compute the same metrics you used for the baseline.
+
+```python
+# Get final predictions on validation set
+val_loss, val_preds, val_targets = evaluate(model, val_loader, criterion, device)
+
+# For classification: convert probabilities to class labels
+val_pred_labels = (val_preds > 0.5).astype(int).flatten()
+val_true_labels = val_targets.flatten().astype(int)
+
+print("=== Neural Network (Best Checkpoint) ===")
+print(classification_report(val_true_labels, val_pred_labels))
+
+nn_f1 = f1_score(val_true_labels, val_pred_labels, average="weighted")
+log_result("NeuralNetwork_v1", nn_f1, "128/64/32, dropout=0.3, lr=1e-3")
+```
+
+### Build a Comparison Table
+
+```python
+results_df = pd.DataFrame(results)
+results_df = results_df.sort_values("val_metric", ascending=False)
+print("\n=== Model Comparison ===")
+print(results_df.to_string(index=False))
+results_df.to_csv("results/model_comparison.csv", index=False)
+```
+
+If your neural network does not beat the Random Forest, that is a valid and informative result.
+Tabular data often favors tree-based models. Your job is not to force the neural network to win —
+it is to understand why each model performs the way it does.
+
+## Step 6: Experimentation
+
+Run at least three experiments, changing one thing at a time. Log every result.
+
+### Experiment Ideas
+
+**Architecture changes:**
+- Add or remove hidden layers
+- Change hidden layer widths (e.g., 256/128/64 instead of 128/64/32)
+- Try a different activation function (LeakyReLU, GELU)
+
+**Regularization changes:**
+- Increase or decrease dropout rate (0.1 vs 0.3 vs 0.5)
+- Adjust weight decay (1e-5 vs 1e-4 vs 1e-3)
+- Add or remove batch normalization
+
+**Training changes:**
+- Adjust learning rate (1e-2, 1e-3, 1e-4)
+- Try a different optimizer (SGD with momentum, AdamW)
+- Change batch size (32, 64, 128, 256)
+
+**Feature changes:**
+- Remove low-importance features
+- Add more engineered features from Phase 1
+- Try different scaling (MinMaxScaler vs StandardScaler)
+
+### Example: Hyperparameter Sweep
+
+```python
+# Simple manual sweep (you could also use Optuna or Ray Tune)
+experiments = [
+    {"hidden_dims": [64, 32], "dropout": 0.2, "lr": 1e-3},
+    {"hidden_dims": [256, 128, 64], "dropout": 0.3, "lr": 1e-3},
+    {"hidden_dims": [128, 64, 32], "dropout": 0.5, "lr": 1e-4},
+    {"hidden_dims": [128, 64, 32], "dropout": 0.3, "lr": 1e-2},
+]
+
+for i, config in enumerate(experiments):
+    print(f"\n--- Experiment {i+1}: {config} ---")
+
+    model_exp = TabularNet(
+        input_dim=input_dim,
+        hidden_dims=config["hidden_dims"],
+        output_dim=output_dim,
+        dropout_rate=config["dropout"]
+    ).to(device)
+
+    optimizer_exp = torch.optim.Adam(
+        model_exp.parameters(), lr=config["lr"], weight_decay=1e-4
+    )
+
+    # Train for a fixed number of epochs (shorter for sweeps)
+    for epoch in range(30):
+        train_one_epoch(model_exp, train_loader, criterion, optimizer_exp, device)
+
+    _, preds, targets = evaluate(model_exp, val_loader, criterion, device)
+    pred_labels = (preds > 0.5).astype(int).flatten()
+    true_labels = targets.flatten().astype(int)
+
+    f1 = f1_score(true_labels, pred_labels, average="weighted")
+    config_str = str(config)
+    log_result(f"Experiment_{i+1}", f1, config_str)
+```
+
+<CommonMistake>
+Do not change multiple things at once. If you change the learning rate, dropout, and architecture
+simultaneously and see an improvement, you do not know which change caused it. Change one
+variable at a time. This is slower but gives you real understanding.
+</CommonMistake>
+
+## Step 7: Final Evaluation on Test Set
+
+Only after you have finished all experiments and selected your best model, evaluate on the
+test set exactly once.
+
+```python
+# Load test data
+X_test_t = torch.tensor(X_test.values, dtype=torch.float32)
+y_test_t = torch.tensor(y_test.values, dtype=torch.float32)
+test_dataset = TensorDataset(X_test_t, y_test_t)
+test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False)
+
+# Load best model
+model.load_state_dict(torch.load("models/best_model.pt"))
+test_loss, test_preds, test_targets = evaluate(model, test_loader, criterion, device)
+
+test_pred_labels = (test_preds > 0.5).astype(int).flatten()
+test_true_labels = test_targets.flatten().astype(int)
+
+print("=== FINAL TEST SET EVALUATION ===")
+print(classification_report(test_true_labels, test_pred_labels))
+
+# Compare with validation performance
+test_f1 = f1_score(test_true_labels, test_pred_labels, average="weighted")
+print(f"Validation F1: {nn_f1:.4f}")
+print(f"Test F1:       {test_f1:.4f}")
+print(f"Difference:    {abs(nn_f1 - test_f1):.4f}")
+```
+
+If the test performance is close to the validation performance (within 1-2%), your evaluation
+was fair and your model generalizes well. If there is a large gap, you may have overfit to the
+validation set through excessive hyperparameter tuning.
+
+### Save the Final Model
+
+```python
+import os
+os.makedirs("models", exist_ok=True)
+
+# Save PyTorch model
+torch.save({
+    "model_state_dict": model.state_dict(),
+    "input_dim": input_dim,
+    "hidden_dims": [128, 64, 32],  # match your best config
+    "output_dim": output_dim,
+    "dropout_rate": 0.3,
+}, "models/final_model.pt")
+
+# Also save the sklearn baseline for comparison in Phase 3
+joblib.dump(rf_model, "models/rf_baseline.joblib")
+
+print("Models saved to models/")
+```
+
+## Deliverables Checklist
+
+Before moving to Phase 3, confirm you have completed the following:
+
+- [ ] Logistic/Linear Regression baseline trained and evaluated
+- [ ] Random Forest baseline trained and evaluated
+- [ ] Custom PyTorch neural network designed, trained, and evaluated
+- [ ] Learning curve plot saved
+- [ ] At least 3 experiments logged with different hyperparameters
+- [ ] Model comparison table saved to CSV
+- [ ] Final evaluation on test set completed exactly once
+- [ ] Best model checkpoint saved to `models/`
+- [ ] Written summary of which model performed best and why
+
+<KeyTakeaway>
+The goal of Phase 2 is not to achieve state-of-the-art performance. It is to demonstrate
+a disciplined modeling workflow: baseline first, systematic experimentation, honest evaluation,
+and clear documentation of results. An employer reviewing this project will care far more about
+your process than your final accuracy number.
+</KeyTakeaway>

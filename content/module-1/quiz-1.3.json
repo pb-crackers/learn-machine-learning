@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "What does the derivative of a function at a point tell you?",
+      "options": [
+        "The area under the curve at that point",
+        "The rate of change (slope) of the function at that point",
+        "The maximum value of the function",
+        "The average value of the function"
+      ],
+      "correct": "B",
+      "explanation": "The derivative f'(x) gives the instantaneous rate of change of f at point x. Geometrically, it is the slope of the tangent line to the curve at that point."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "In gradient descent, why do we move in the NEGATIVE gradient direction?",
+      "options": [
+        "Because the gradient points toward the maximum, and we want the minimum",
+        "Because negative numbers are smaller",
+        "Because the loss function is always negative",
+        "Because it is computationally faster"
+      ],
+      "correct": "A",
+      "explanation": "The gradient points in the direction of steepest INCREASE. Since we want to minimize the loss, we move in the opposite (negative gradient) direction — the direction of steepest decrease."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "What happens when the learning rate is too large?",
+      "options": [
+        "Training is very slow but always converges",
+        "The model overfits to the training data",
+        "The loss may oscillate wildly or diverge instead of converging",
+        "The model underfits the data"
+      ],
+      "correct": "C",
+      "explanation": "A learning rate that is too large causes the parameter updates to overshoot the minimum. The optimizer bounces back and forth across the valley, and the loss oscillates or even increases (diverges)."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What is the gradient of f(x, y) = 3x² + 2y² at the point (1, 2)?",
+      "options": [
+        "[6, 8]",
+        "[3, 2]",
+        "[6, 4]",
+        "[2, 4]"
+      ],
+      "correct": "A",
+      "explanation": "The gradient is [∂f/∂x, ∂f/∂y] = [6x, 4y]. At (1, 2): [6(1), 4(2)] = [6, 8]."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "Why is the chain rule important for training neural networks?",
+      "options": [
+        "It allows us to initialize weights properly",
+        "It enables backpropagation — computing gradients through multiple layers by chaining derivatives",
+        "It prevents overfitting",
+        "It speeds up matrix multiplication"
+      ],
+      "correct": "B",
+      "explanation": "Neural networks are compositions of functions (layers). The chain rule lets us compute how the loss changes with respect to parameters in ANY layer by multiplying derivatives through the chain of layers. This is exactly what backpropagation does."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "What is the advantage of mini-batch gradient descent over full-batch gradient descent?",
+      "options": [
+        "It always finds the global minimum",
+        "It requires less memory and updates parameters more frequently, leading to faster practical convergence",
+        "It eliminates the need for a learning rate",
+        "It produces smoother loss curves"
+      ],
+      "correct": "B",
+      "explanation": "Mini-batch GD processes a small subset of data per step, requiring less memory and allowing more frequent parameter updates. While each individual gradient estimate is noisier, the model makes progress much faster per unit of compute, especially on large datasets."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "For the MSE loss L = (1/n)Σ(yᵢ - ŷᵢ)², what determines the magnitude of the gradient?",
+      "options": [
+        "Only the number of samples n",
+        "Only the learning rate",
+        "The prediction errors (yᵢ - ŷᵢ) — larger errors produce larger gradients",
+        "The initial values of the weights"
+      ],
+      "correct": "C",
+      "explanation": "The gradient of MSE is proportional to the errors (yᵢ - ŷᵢ). When predictions are far from true values, gradients are large and parameters change significantly. As predictions improve and errors shrink, gradients become smaller and updates become more refined."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "If gradient descent gets stuck at a saddle point, which of the following can help?",
+      "options": [
+        "Reducing the learning rate to zero",
+        "Using stochastic gradient descent, whose noise can push the optimizer past saddle points",
+        "Removing features from the dataset",
+        "Increasing the number of training samples"
+      ],
+      "correct": "B",
+      "explanation": "SGD introduces noise through random sampling, which can perturb the optimizer away from saddle points. Momentum-based optimizers (like Adam) also help by accumulating velocity that carries the optimizer through flat regions."
+    }
+  ]
+}

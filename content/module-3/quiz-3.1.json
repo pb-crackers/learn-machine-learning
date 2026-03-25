@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "What are the three steps a single artificial neuron performs, in order?",
+      "options": [
+        "Normalize inputs, compute mean, apply threshold",
+        "Compute weighted sum, apply activation function, produce output",
+        "Select features, compute distance, classify",
+        "Encode input, decode hidden state, generate output"
+      ],
+      "correct": "B",
+      "explanation": "A neuron computes z = w^T x + b (weighted sum), then applies an activation function f(z) to produce its output. This is the fundamental building block of all neural networks."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "Why are activation functions necessary in neural networks?",
+      "options": [
+        "They speed up computation by reducing the number of operations",
+        "They normalize the outputs to always be between 0 and 1",
+        "They introduce non-linearity, allowing the network to learn complex patterns",
+        "They prevent the weights from becoming too large during training"
+      ],
+      "correct": "C",
+      "explanation": "Without activation functions, stacking multiple layers would be equivalent to a single linear transformation (since a linear function of linear functions is still linear). Non-linear activations allow neural networks to approximate complex, non-linear functions."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "What is the main limitation of a single perceptron?",
+      "options": [
+        "It cannot process numerical inputs",
+        "It can only learn linearly separable patterns",
+        "It requires too much memory to store weights",
+        "It cannot use gradient descent for training"
+      ],
+      "correct": "B",
+      "explanation": "A single perceptron draws a single linear decision boundary. It cannot solve problems like XOR where the classes are not linearly separable. This was the famous limitation demonstrated by Minsky and Papert in 1969."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "Which activation function is the default recommendation for hidden layers in modern neural networks?",
+      "options": [
+        "Sigmoid",
+        "Tanh",
+        "ReLU",
+        "Step function"
+      ],
+      "correct": "C",
+      "explanation": "ReLU (Rectified Linear Unit) is the standard choice for hidden layers because it is computationally efficient, does not suffer from vanishing gradients for positive inputs, and tends to produce sparse activations. Sigmoid and tanh are more prone to the vanishing gradient problem."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "A dense layer has 256 input features and 128 neurons. How many learnable parameters does it have?",
+      "options": [
+        "32,768",
+        "32,896",
+        "33,024",
+        "256,128"
+      ],
+      "correct": "B",
+      "explanation": "Parameters = (inputs x neurons) + neurons for biases = (256 x 128) + 128 = 32,768 + 128 = 32,896. Each neuron has one weight per input plus one bias."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "What does the Universal Approximation Theorem tell us?",
+      "options": [
+        "Deep networks always outperform shallow networks",
+        "A single hidden layer network can represent any continuous function given enough neurons",
+        "Neural networks can solve any computational problem",
+        "Gradient descent will always find the global minimum"
+      ],
+      "correct": "B",
+      "explanation": "The Universal Approximation Theorem states that a feedforward network with a single hidden layer and sufficient neurons can approximate any continuous function to arbitrary accuracy. However, it says nothing about whether training will find those weights, or how many neurons are needed in practice."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "What is the 'dying ReLU' problem?",
+      "options": [
+        "ReLU activation becomes computationally slower over time",
+        "ReLU neurons that output zero for all inputs have zero gradient and stop learning",
+        "ReLU produces outputs that grow without bound, causing overflow",
+        "ReLU networks always overfit the training data"
+      ],
+      "correct": "B",
+      "explanation": "If a ReLU neuron's weights are updated such that its weighted sum is negative for every training example, the gradient will be zero for all inputs and the neuron will never recover. This neuron is effectively 'dead.' Variants like Leaky ReLU address this by having a small non-zero slope for negative inputs."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "Why are deep networks (many layers) often preferred over wide shallow networks (one large hidden layer)?",
+      "options": [
+        "Deep networks always have fewer parameters",
+        "Deep networks learn hierarchical features, building complex representations from simpler ones",
+        "Shallow networks cannot use ReLU activation",
+        "The Universal Approximation Theorem only applies to deep networks"
+      ],
+      "correct": "B",
+      "explanation": "Deep networks learn features hierarchically: early layers detect simple patterns, and later layers combine them into increasingly abstract and complex representations. This compositional approach is much more parameter-efficient than trying to learn everything in a single layer, especially for structured data like images and text."
+    }
+  ]
+}

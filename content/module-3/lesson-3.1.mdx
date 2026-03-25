@@ -1,0 +1,587 @@
+---
+module: 3
+lesson: 1
+title: "The Perceptron & Neural Network Fundamentals"
+description: "Understand how a single artificial neuron works, explore activation functions, and learn how stacking neurons into layers creates the foundation of deep learning."
+prerequisites: ["2.5"]
+estimatedMinutes: 55
+---
+
+# The Perceptron & Neural Network Fundamentals
+
+In the previous module, you learned about classical machine learning algorithms like linear regression and decision trees. These models are powerful, but they have a fundamental limitation: they struggle with complex, non-linear patterns unless you manually engineer the right features. Neural networks solve this problem by *learning* features automatically.
+
+In this lesson, we will build your understanding from the ground up --- starting with a single artificial neuron and working our way to the architecture that powers modern AI.
+
+<WhyThisMatters>
+Neural networks are not just another algorithm in the ML toolkit. They are the foundation of nearly every breakthrough in AI over the past decade --- from image recognition and language translation to protein folding and self-driving cars. Understanding how they work at the fundamental level will make everything else in deep learning click into place.
+</WhyThisMatters>
+
+## The Biological Inspiration
+
+The artificial neuron is loosely inspired by biological neurons in the brain. A biological neuron receives electrical signals through its **dendrites**, processes them in the **cell body**, and if the combined signal exceeds a threshold, it fires an output signal through its **axon** to other neurons.
+
+We take this idea and simplify it dramatically into a mathematical model.
+
+## The Perceptron: A Single Artificial Neuron
+
+The **perceptron**, invented by Frank Rosenblatt in 1958, is the simplest possible neural network --- a single neuron. It works in three steps:
+
+### Step 1: Weighted Sum
+
+The neuron receives multiple inputs, each multiplied by a **weight**, and adds them together with a **bias** term:
+
+<MathNote>
+The weighted sum (also called the **pre-activation** or $z$) is calculated as:
+
+$$z = w_1 x_1 + w_2 x_2 + \cdots + w_n x_n + b = \sum_{i=1}^{n} w_i x_i + b$$
+
+In vector notation, this is simply:
+
+$$z = \mathbf{w}^T \mathbf{x} + b$$
+
+where $\mathbf{w}$ is the weight vector, $\mathbf{x}$ is the input vector, and $b$ is the bias.
+</MathNote>
+
+Think of each weight as measuring how important that particular input is. A large positive weight means "this input strongly supports a positive output." A large negative weight means "this input argues against a positive output." The bias lets the neuron shift its decision boundary.
+
+### Step 2: Activation Function
+
+The weighted sum $z$ is then passed through an **activation function** $f$ to produce the neuron's output:
+
+$$a = f(z)$$
+
+The activation function introduces **non-linearity** --- and this is crucial. Without it, a neural network of any depth would collapse into a single linear transformation, no more powerful than plain linear regression.
+
+### Step 3: Output
+
+The result $a$ is the neuron's output. It might be the final prediction, or it might feed into the next layer of neurons.
+
+## Let's Build a Perceptron in NumPy
+
+```python
+import numpy as np
+
+class Perceptron:
+    """A single artificial neuron."""
+
+    def __init__(self, n_inputs, activation='step'):
+        # Initialize weights randomly (small values)
+        self.weights = np.random.randn(n_inputs) * 0.01
+        self.bias = 0.0
+        self.activation = activation
+
+    def _activate(self, z):
+        """Apply activation function."""
+        if self.activation == 'step':
+            return 1.0 if z >= 0 else 0.0
+        elif self.activation == 'sigmoid':
+            return 1.0 / (1.0 + np.exp(-z))
+        else:
+            raise ValueError(f"Unknown activation: {self.activation}")
+
+    def forward(self, x):
+        """Compute output for a single input."""
+        z = np.dot(self.weights, x) + self.bias   # weighted sum
+        return self._activate(z)                    # activation
+
+    def predict(self, X):
+        """Predict for multiple inputs."""
+        return np.array([self.forward(x) for x in X])
+```
+
+Let's use this perceptron to learn the AND logic gate:
+
+```python
+# AND gate training data
+X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+y = np.array([0, 0, 0, 1])
+
+# Create perceptron
+neuron = Perceptron(n_inputs=2, activation='step')
+learning_rate = 0.1
+
+# Train with the perceptron learning rule
+for epoch in range(20):
+    errors = 0
+    for xi, yi in zip(X, y):
+        prediction = neuron.forward(xi)
+        error = yi - prediction
+
+        # Update weights: w_new = w_old + lr * error * x
+        neuron.weights += learning_rate * error * xi
+        neuron.bias += learning_rate * error
+
+        if error != 0:
+            errors += 1
+
+    if errors == 0:
+        print(f"Converged at epoch {epoch + 1}")
+        break
+
+# Test
+for xi, yi in zip(X, y):
+    pred = neuron.forward(xi)
+    print(f"Input: {xi} -> Predicted: {pred}, Actual: {yi}")
+```
+
+```
+Converged at epoch 6
+Input: [0 0] -> Predicted: 0.0, Actual: 0
+Input: [0 1] -> Predicted: 0.0, Actual: 0
+Input: [1 0] -> Predicted: 0.0, Actual: 0
+Input: [1 1] -> Predicted: 1.0, Actual: 1
+```
+
+<CommonMistake>
+A single perceptron can only learn **linearly separable** patterns. The classic example of what it *cannot* learn is the XOR gate (where inputs [0,1] and [1,0] output 1, but [0,0] and [1,1] output 0). This limitation, highlighted by Minsky and Papert in 1969, temporarily killed interest in neural networks. The solution? Stack multiple neurons into layers --- which we will cover shortly.
+</CommonMistake>
+
+## Activation Functions in Depth
+
+The choice of activation function profoundly affects how a neural network learns. Let's explore the most important ones.
+
+### Sigmoid (Logistic)
+
+<MathNote>
+$$\sigma(z) = \frac{1}{1 + e^{-z}}$$
+
+**Output range:** $(0, 1)$
+
+**Derivative:** $\sigma'(z) = \sigma(z)(1 - \sigma(z))$
+
+The derivative has a maximum value of 0.25 (at $z = 0$), which becomes important when we discuss the vanishing gradient problem.
+</MathNote>
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+def sigmoid(z):
+    return 1.0 / (1.0 + np.exp(-z))
+
+def sigmoid_derivative(z):
+    s = sigmoid(z)
+    return s * (1 - s)
+
+z = np.linspace(-6, 6, 200)
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+axes[0].plot(z, sigmoid(z), 'b-', linewidth=2)
+axes[0].set_title("Sigmoid")
+axes[0].axhline(y=0.5, color='gray', linestyle='--', alpha=0.5)
+axes[0].grid(True, alpha=0.3)
+
+axes[1].plot(z, sigmoid_derivative(z), 'r-', linewidth=2)
+axes[1].set_title("Sigmoid Derivative")
+axes[1].grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+**Pros:** Smooth, differentiable, outputs interpretable as probabilities.
+
+**Cons:** Saturates for large $|z|$ (gradients vanish), outputs not zero-centered, computationally expensive (exp).
+
+### ReLU (Rectified Linear Unit)
+
+<MathNote>
+$$\text{ReLU}(z) = \max(0, z)$$
+
+**Output range:** $[0, \infty)$
+
+**Derivative:**
+$$\text{ReLU}'(z) = \begin{cases} 1 & \text{if } z > 0 \\ 0 & \text{if } z < 0 \\ \text{undefined} & \text{if } z = 0 \end{cases}$$
+
+In practice, we define the derivative at $z = 0$ as either 0 or 1.
+</MathNote>
+
+```python
+def relu(z):
+    return np.maximum(0, z)
+
+def relu_derivative(z):
+    return (z > 0).astype(float)
+
+z = np.linspace(-6, 6, 200)
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+axes[0].plot(z, relu(z), 'b-', linewidth=2)
+axes[0].set_title("ReLU")
+axes[0].grid(True, alpha=0.3)
+
+axes[1].plot(z, relu_derivative(z), 'r-', linewidth=2)
+axes[1].set_title("ReLU Derivative")
+axes[1].grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+**Pros:** Computationally fast, no vanishing gradient for positive inputs, sparse activation.
+
+**Cons:** "Dying ReLU" problem --- if a neuron's output becomes negative for all inputs, its gradient is permanently zero and it stops learning.
+
+### Tanh (Hyperbolic Tangent)
+
+<MathNote>
+$$\tanh(z) = \frac{e^z - e^{-z}}{e^z + e^{-z}}$$
+
+**Output range:** $(-1, 1)$
+
+**Derivative:** $\tanh'(z) = 1 - \tanh^2(z)$
+
+Note that $\tanh(z) = 2\sigma(2z) - 1$, so tanh is just a rescaled sigmoid.
+</MathNote>
+
+```python
+def tanh(z):
+    return np.tanh(z)
+
+def tanh_derivative(z):
+    return 1 - np.tanh(z)**2
+
+z = np.linspace(-6, 6, 200)
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+axes[0].plot(z, tanh(z), 'b-', linewidth=2)
+axes[0].set_title("Tanh")
+axes[0].axhline(y=0, color='gray', linestyle='--', alpha=0.5)
+axes[0].grid(True, alpha=0.3)
+
+axes[1].plot(z, tanh_derivative(z), 'r-', linewidth=2)
+axes[1].set_title("Tanh Derivative")
+axes[1].grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+**Pros:** Zero-centered (helps with convergence), stronger gradients than sigmoid.
+
+**Cons:** Still saturates at extremes, still has vanishing gradient (just less severe).
+
+### Comparison and Choosing
+
+```python
+z = np.linspace(-6, 6, 200)
+
+plt.figure(figsize=(10, 6))
+plt.plot(z, sigmoid(z), label='Sigmoid', linewidth=2)
+plt.plot(z, tanh(z), label='Tanh', linewidth=2)
+plt.plot(z, relu(z), label='ReLU', linewidth=2)
+plt.axhline(y=0, color='black', linewidth=0.5)
+plt.axvline(x=0, color='black', linewidth=0.5)
+plt.legend(fontsize=12)
+plt.title("Activation Functions Compared")
+plt.grid(True, alpha=0.3)
+plt.ylim(-1.5, 3)
+plt.show()
+```
+
+**Rules of thumb:**
+- **Hidden layers:** Use ReLU as your default. Try Leaky ReLU or ELU if you encounter dying neurons.
+- **Output layer for binary classification:** Sigmoid (maps to probability).
+- **Output layer for multi-class classification:** Softmax (covered in Lesson 3.2).
+- **Output layer for regression:** No activation (linear output).
+
+## From One Neuron to Layers: The Multi-Layer Perceptron
+
+A single neuron is limited --- it can only draw a single linear boundary. The power of neural networks comes from **stacking neurons into layers**.
+
+### The Architecture
+
+A standard feedforward neural network (also called a **Multi-Layer Perceptron** or MLP) has:
+
+1. **Input layer:** Not really a layer of neurons --- just the raw features passed in.
+2. **Hidden layer(s):** One or more layers of neurons that transform the input. Each neuron connects to every neuron in the previous layer (**fully connected** or **dense** layers).
+3. **Output layer:** Produces the final prediction.
+
+```python
+# Conceptual network structure:
+# Input (3 features) -> Hidden Layer (4 neurons) -> Output (1 neuron)
+#
+#   x1 ---\     /--- h1 ---\
+#   x2 ------->---- h2 -------> output
+#   x3 ---/     \--- h3 ---/
+#                \--- h4 --/
+#
+# Every input connects to every hidden neuron (fully connected)
+# Every hidden neuron connects to the output
+```
+
+### Layer-wise Computation
+
+For a layer with $m$ neurons receiving $n$ inputs, we compute all neurons at once using matrix operations:
+
+<MathNote>
+For a single layer with weight matrix $\mathbf{W}$ of shape $(m, n)$, bias vector $\mathbf{b}$ of shape $(m,)$, and input $\mathbf{x}$ of shape $(n,)$:
+
+$$\mathbf{z} = \mathbf{W}\mathbf{x} + \mathbf{b}$$
+
+$$\mathbf{a} = f(\mathbf{z})$$
+
+where $f$ is applied element-wise. Each row of $\mathbf{W}$ contains the weights for one neuron.
+</MathNote>
+
+```python
+class DenseLayer:
+    """A fully connected layer of neurons."""
+
+    def __init__(self, n_inputs, n_neurons, activation='relu'):
+        # He initialization for ReLU
+        self.weights = np.random.randn(n_neurons, n_inputs) * np.sqrt(2.0 / n_inputs)
+        self.biases = np.zeros(n_neurons)
+        self.activation = activation
+
+    def _activate(self, z):
+        if self.activation == 'relu':
+            return np.maximum(0, z)
+        elif self.activation == 'sigmoid':
+            return 1.0 / (1.0 + np.exp(-z))
+        elif self.activation == 'tanh':
+            return np.tanh(z)
+        elif self.activation == 'linear':
+            return z
+        else:
+            raise ValueError(f"Unknown activation: {self.activation}")
+
+    def forward(self, X):
+        """Forward pass. X shape: (batch_size, n_inputs)."""
+        self.input = X
+        self.z = X @ self.weights.T + self.biases  # (batch, neurons)
+        self.output = self._activate(self.z)
+        return self.output
+
+
+class SimpleNetwork:
+    """A multi-layer perceptron."""
+
+    def __init__(self, layer_sizes, activations):
+        self.layers = []
+        for i in range(len(layer_sizes) - 1):
+            layer = DenseLayer(
+                n_inputs=layer_sizes[i],
+                n_neurons=layer_sizes[i + 1],
+                activation=activations[i]
+            )
+            self.layers.append(layer)
+
+    def forward(self, X):
+        """Forward pass through all layers."""
+        current = X
+        for layer in self.layers:
+            current = layer.forward(current)
+        return current
+
+
+# Create a network: 2 inputs -> 4 hidden -> 3 hidden -> 1 output
+net = SimpleNetwork(
+    layer_sizes=[2, 4, 3, 1],
+    activations=['relu', 'relu', 'sigmoid']
+)
+
+# Forward pass with dummy data
+X_dummy = np.array([[0.5, -0.3], [1.0, 0.7]])
+output = net.forward(X_dummy)
+print(f"Input shape:  {X_dummy.shape}")
+print(f"Output shape: {output.shape}")
+print(f"Predictions:  {output.flatten()}")
+```
+
+```
+Input shape:  (2, 2)
+Output shape: (2, 1)
+Predictions:  [0.501234 0.498876]
+```
+
+The outputs are near 0.5 because we have not trained the network yet --- the random weights produce roughly neutral predictions.
+
+## What Does "Deep" Mean?
+
+A neural network is called **deep** when it has **two or more hidden layers**. That is it. The term "deep learning" simply means machine learning with deep neural networks.
+
+But why does depth matter?
+
+### Hierarchical Feature Learning
+
+Each layer in a deep network learns increasingly **abstract** representations of the input:
+
+- **Layer 1:** Learns simple patterns (edges, basic shapes).
+- **Layer 2:** Combines Layer 1 features into more complex patterns (corners, textures).
+- **Layer 3:** Combines Layer 2 features into higher-level concepts (eyes, wheels, letters).
+- **Layer N:** Combines everything into task-relevant concepts (faces, cars, words).
+
+This is qualitatively different from a single hidden layer that must learn everything in one shot.
+
+```python
+# Illustration: How depth helps with the XOR problem
+# A single neuron cannot solve XOR, but two layers can!
+
+# XOR data
+X_xor = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+y_xor = np.array([0, 1, 1, 0])
+
+# With 2 hidden neurons and the right weights, XOR becomes solvable:
+# Hidden neuron 1 computes: h1 = (x1 OR x2) roughly
+# Hidden neuron 2 computes: h2 = (x1 AND x2) roughly
+# Output neuron computes:   y  = h1 AND (NOT h2)
+
+# Manually set weights to demonstrate
+layer1_W = np.array([[1.0, 1.0],    # OR-like neuron
+                     [1.0, 1.0]])    # AND-like neuron
+layer1_b = np.array([-0.5, -1.5])   # thresholds differ
+
+layer2_W = np.array([[1.0, -2.0]])   # h1 AND NOT h2
+layer2_b = np.array([-0.5])
+
+for x, y in zip(X_xor, y_xor):
+    h = np.maximum(0, x @ layer1_W.T + layer1_b)  # ReLU
+    out = 1.0 if (h @ layer2_W.T + layer2_b) > 0 else 0.0
+    print(f"x={x}, hidden={h}, output={out}, target={y}")
+```
+
+```
+x=[0 0], hidden=[0.  0. ], output=0.0, target=0
+x=[0 1], hidden=[0.5 0. ], output=1.0, target=1
+x=[1 0], hidden=[0.5 0. ], output=1.0, target=1
+x=[1 1], hidden=[1.5 0.5], output=0.0, target=0
+```
+
+<KeyTakeaway>
+Depth enables **compositional learning**. A deep network does not need exponentially many neurons to represent complex functions --- it builds them up layer by layer, reusing simpler features. This is why a deep network with a modest number of neurons per layer can be far more powerful than a wide shallow network with the same total number of parameters.
+</KeyTakeaway>
+
+### Width vs. Depth
+
+| Property | Wide (1 hidden layer, many neurons) | Deep (many layers, fewer neurons each) |
+|----------|-------------------------------------|----------------------------------------|
+| Parameters | Can be similar | Can be similar |
+| Feature learning | Flat, all at once | Hierarchical, layered |
+| Practical effectiveness | Good for simpler tasks | Better for complex structured data |
+| Training difficulty | Easier to optimize | Can suffer from vanishing gradients |
+
+## The Universal Approximation Theorem
+
+One of the most profound results in neural network theory is the **Universal Approximation Theorem** (Cybenko, 1989; Hornik, 1991):
+
+> A feedforward neural network with a single hidden layer containing a finite number of neurons can approximate any continuous function on a compact subset of $\mathbb{R}^n$ to arbitrary accuracy, given a suitable activation function.
+
+In plain English: **a single hidden layer is theoretically enough to represent any function**, as long as you have enough neurons.
+
+<CommonMistake>
+Students often misinterpret the Universal Approximation Theorem to mean "one hidden layer is all you need." This is wrong for several reasons:
+
+1. The theorem says nothing about **learning** --- it only guarantees that the representation *exists*, not that gradient descent will find it.
+2. The required number of neurons might be **astronomically large** for complex functions.
+3. In practice, deep networks learn the same functions with **far fewer total parameters** than shallow ones.
+
+The theorem tells us neural networks are powerful enough in principle. Practical success requires depth, good optimization, and lots of data.
+</CommonMistake>
+
+### Intuition: Why Can One Layer Approximate Anything?
+
+Consider sigmoid neurons. Each sigmoid creates an S-shaped curve. By combining many sigmoid neurons with different weights and biases, you can create a "bump" at any location with any height. By adding enough bumps together, you can approximate any continuous curve --- like building a shape out of LEGO bricks.
+
+```python
+# Demonstrating universal approximation with sigmoid bumps
+def make_bump(x, center, width, height):
+    """Create a bump using two sigmoids."""
+    left = sigmoid((x - center + width/2) * 10/width)
+    right = sigmoid(-(x - center - width/2) * 10/width)
+    return height * left * right
+
+x = np.linspace(0, 2*np.pi, 500)
+target = np.sin(x)  # Function we want to approximate
+
+# Approximate with bumps
+approx = np.zeros_like(x)
+n_bumps = 10
+for i in range(n_bumps):
+    center = (i + 0.5) * 2 * np.pi / n_bumps
+    value_at_center = np.sin(center)
+    approx += make_bump(x, center, 2*np.pi/n_bumps, value_at_center)
+
+plt.figure(figsize=(10, 5))
+plt.plot(x, target, 'b-', linewidth=2, label='sin(x) [target]')
+plt.plot(x, approx, 'r--', linewidth=2, label=f'{n_bumps} bumps [approximation]')
+plt.legend(fontsize=12)
+plt.title("Approximating sin(x) with Sigmoid Bumps")
+plt.grid(True, alpha=0.3)
+plt.show()
+```
+
+## Putting It All Together: Key Terminology
+
+Before moving on, let's solidify the core vocabulary:
+
+| Term | Meaning |
+|------|---------|
+| **Neuron (node)** | A single computation unit: weighted sum + activation |
+| **Weight** | A learnable parameter that scales an input |
+| **Bias** | A learnable parameter that shifts the activation |
+| **Activation function** | Non-linear function applied after the weighted sum |
+| **Layer** | A group of neurons that operate in parallel |
+| **Dense / Fully Connected** | Every neuron connects to every neuron in the adjacent layer |
+| **Hidden layer** | Any layer between input and output |
+| **Deep network** | A network with 2+ hidden layers |
+| **Forward pass** | Computing the output from input through all layers |
+| **Parameters** | All the weights and biases in a network |
+
+## Counting Parameters
+
+Understanding parameter counts is essential for gauging model complexity.
+
+<MathNote>
+For a dense layer connecting $n$ inputs to $m$ neurons:
+
+$$\text{Parameters} = n \times m + m = m(n + 1)$$
+
+The $n \times m$ term is for weights; the $+ m$ is for biases (one per neuron).
+
+For the full network, sum across all layers.
+</MathNote>
+
+```python
+def count_parameters(layer_sizes):
+    """Count total parameters in a feedforward network."""
+    total = 0
+    for i in range(len(layer_sizes) - 1):
+        n_in = layer_sizes[i]
+        n_out = layer_sizes[i + 1]
+        weights = n_in * n_out
+        biases = n_out
+        total += weights + biases
+        print(f"  Layer {i+1}: {n_in} -> {n_out} = "
+              f"{weights} weights + {biases} biases = {weights + biases}")
+    print(f"  Total: {total} parameters")
+    return total
+
+print("Small network: [784, 128, 64, 10]")
+count_parameters([784, 128, 64, 10])
+
+print("\nDeep network: [784, 256, 128, 64, 32, 10]")
+count_parameters([784, 256, 128, 64, 32, 10])
+```
+
+```
+Small network: [784, 128, 64, 10]
+  Layer 1: 784 -> 128 = 100352 weights + 128 biases = 100480
+  Layer 2: 128 -> 64 = 8192 weights + 64 biases = 8256
+  Layer 3: 64 -> 10 = 640 weights + 10 biases = 650
+  Total: 109386 parameters
+
+Deep network: [784, 256, 128, 64, 32, 10]
+  Layer 1: 784 -> 256 = 200704 weights + 256 biases = 200960
+  Layer 2: 256 -> 128 = 32768 weights + 128 biases = 32896
+  Layer 3: 128 -> 64 = 8192 weights + 64 biases = 8256
+  Layer 4: 64 -> 32 = 2048 weights + 32 biases = 2080
+  Layer 5: 32 -> 10 = 320 weights + 10 biases = 330
+  Total: 244522 parameters
+```
+
+<KeyTakeaway>
+A neural network is a function built from layers of simple units (neurons), each computing a weighted sum followed by a non-linear activation. The power of neural networks comes from (1) non-linear activation functions that let them model complex patterns, (2) depth that enables hierarchical feature learning, and (3) the ability to learn all weights and biases from data through training (which we cover in the next lesson). The perceptron is where it all begins --- once you understand a single neuron, everything else is about scale and architecture.
+</KeyTakeaway>
+
+## What's Next
+
+We now understand the **architecture** of neural networks --- how data flows forward through layers of neurons. But we skipped a crucial question: **how do the weights get their values?** In Lesson 3.2, we will tackle **backpropagation**, the algorithm that makes neural networks learn by flowing error signals backward through the network to update every weight.

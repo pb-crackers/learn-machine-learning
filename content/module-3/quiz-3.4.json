@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "Why do fully connected layers struggle with image data?",
+      "options": [
+        "They cannot process floating-point pixel values",
+        "They have too many parameters, ignore spatial structure, and lack translation invariance",
+        "They can only handle grayscale images, not color",
+        "They require images to be perfectly square"
+      ],
+      "correct": "B",
+      "explanation": "FC layers treat every pixel as an independent feature, ignoring spatial relationships between nearby pixels. They also require a separate weight for every pixel-to-neuron connection, resulting in enormous parameter counts. And they have no translation invariance — a pattern at different positions looks completely different to an FC layer."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "What does a convolutional filter (kernel) do?",
+      "options": [
+        "It randomly samples pixels from the image to reduce its size",
+        "It slides across the input, computing a weighted sum at each position to detect local patterns",
+        "It normalizes pixel values to be between 0 and 1",
+        "It connects every input pixel to every output neuron"
+      ],
+      "correct": "B",
+      "explanation": "A convolutional filter is a small matrix of learnable weights that slides across the input. At each position, it computes the element-wise product between the filter and the local image patch, then sums the result. Different filters learn to detect different local patterns like edges, textures, or color gradients."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "Given an input of size 32x32 with 3 channels, a convolutional layer with 64 filters of size 3x3, stride 1, and padding 1, what is the output shape?",
+      "options": [
+        "32x32x3",
+        "30x30x64",
+        "32x32x64",
+        "16x16x64"
+      ],
+      "correct": "C",
+      "explanation": "With padding=1 and stride=1, the spatial dimensions are preserved: output_size = (32 - 3 + 2*1)/1 + 1 = 32. The number of output channels equals the number of filters (64). So the output is 32x32x64."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What is the purpose of max pooling in a CNN?",
+      "options": [
+        "To learn new features by applying learned filters",
+        "To reduce spatial dimensions and provide translation invariance, with no learnable parameters",
+        "To normalize the feature maps between layers",
+        "To add non-linearity between convolutional layers"
+      ],
+      "correct": "B",
+      "explanation": "Max pooling reduces the spatial size of feature maps by taking the maximum value from each local region. This reduces computation, provides some translation invariance (small shifts in the input don't change the max), and has no learnable parameters — it's a fixed operation."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "Why do modern CNNs prefer two stacked 3x3 convolutions over one 5x5 convolution?",
+      "options": [
+        "3x3 convolutions are the only size supported by GPUs",
+        "Two 3x3 layers have the same receptive field as 5x5 but with fewer parameters and more non-linearity",
+        "5x5 convolutions cannot detect edges",
+        "3x3 convolutions always produce higher accuracy"
+      ],
+      "correct": "B",
+      "explanation": "Two stacked 3x3 convolutions cover a 5x5 receptive field but use only 2*(3*3) = 18 weights per channel vs. 25 for a 5x5 filter. Additionally, with a ReLU between them, two 3x3 layers introduce an extra non-linearity, making the network more expressive. This insight from VGGNet became a standard practice."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "What problem did ResNet's skip connections solve?",
+      "options": [
+        "Overfitting on small datasets",
+        "Slow training due to large batch sizes",
+        "The vanishing gradient problem in very deep networks",
+        "High memory usage during inference"
+      ],
+      "correct": "C",
+      "explanation": "Skip connections add the block's input directly to its output (y = F(x) + x). This creates a shortcut path for gradients to flow backward through the network, preventing them from vanishing across many layers. This enabled training networks with 100+ layers, which was previously impossible."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "How many learnable parameters does a Conv2d layer with 3 input channels, 16 output channels, and a 3x3 kernel have?",
+      "options": [
+        "144",
+        "160",
+        "432",
+        "448"
+      ],
+      "correct": "D",
+      "explanation": "Parameters = out_channels * (in_channels * kernel_h * kernel_w + 1 for bias) = 16 * (3 * 3 * 3 + 1) = 16 * 28 = 448. Each of the 16 filters has 3*3*3 = 27 weights (one 3x3 kernel per input channel) plus 1 bias."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "What do early layers of a CNN typically learn to detect?",
+      "options": [
+        "High-level concepts like faces and objects",
+        "Low-level features like edges, colors, and simple textures",
+        "Only horizontal lines",
+        "The overall shape of objects in the image"
+      ],
+      "correct": "B",
+      "explanation": "CNNs learn hierarchical features. Early layers detect simple, low-level patterns: edges at various orientations, color gradients, and basic textures. Middle layers combine these into more complex patterns (corners, circles, parts of objects). Deep layers detect high-level semantic concepts (faces, wheels, text). This hierarchical feature learning is a key strength of deep CNNs."
+    }
+  ]
+}

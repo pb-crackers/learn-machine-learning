@@ -1,0 +1,448 @@
+---
+module: 2
+lesson: 4
+title: "Decision Trees, Random Forests & Ensemble Methods"
+description: "Learn how decision trees split data, understand information gain and Gini impurity, then see how ensemble methods like random forests and boosting dramatically improve performance."
+prerequisites: ["2.3"]
+estimatedMinutes: 50
+---
+
+# Decision Trees, Random Forests & Ensemble Methods
+
+Logistic regression draws a single straight line (or hyperplane) to separate classes. But many real-world datasets have boundaries that are not even close to linear. Decision trees solve this by asking a sequence of yes/no questions about the features, recursively splitting the data into ever-purer groups.
+
+Even better, combining many trees into an **ensemble** — random forests, gradient boosting — produces models that are powerful, robust, and often the best choice for tabular data.
+
+<WhyThisMatters>
+Tree-based ensembles (especially XGBoost, LightGBM, and random forests) are the dominant algorithms for structured/tabular data. They win the majority of Kaggle competitions on tabular datasets, power recommendation systems, and drive fraud detection at scale. This lesson equips you with the most practical family of models in classical ML.
+</WhyThisMatters>
+
+---
+
+## How Decision Trees Work
+
+A decision tree is a flowchart-like structure where:
+- Each **internal node** tests one feature against a threshold
+- Each **branch** represents the outcome of the test
+- Each **leaf** provides a prediction (class label or numeric value)
+
+```
+                Is income > $50k?
+               /                 \
+            Yes                   No
+           /                       \
+    Age > 30?                Credit score > 700?
+    /      \                 /              \
+  Yes      No             Yes              No
+  |         |              |                |
+Approve   Review        Approve           Deny
+```
+
+### Building a Tree: The Splitting Process
+
+At each node, the algorithm considers every feature and every possible threshold, choosing the split that best **separates** the classes. But how do we measure "best"?
+
+---
+
+## Measuring Impurity
+
+### Gini Impurity
+
+For a node with $K$ classes, Gini impurity measures how often a randomly chosen sample would be misclassified:
+
+$$\text{Gini}(t) = 1 - \sum_{k=1}^{K} p_k^2$$
+
+where $p_k$ is the fraction of samples belonging to class $k$ at node $t$.
+
+- **Pure node** (all one class): $\text{Gini} = 0$
+- **Maximum impurity** (equal mix of 2 classes): $\text{Gini} = 0.5$
+
+<MathNote>
+Example: a node with 40 samples — 30 class A, 10 class B.
+
+$$p_A = 30/40 = 0.75, \quad p_B = 10/40 = 0.25$$
+$$\text{Gini} = 1 - (0.75^2 + 0.25^2) = 1 - (0.5625 + 0.0625) = 0.375$$
+
+A perfectly pure node (all class A) would have Gini = 0. A 50/50 split would have Gini = 0.5.
+</MathNote>
+
+### Entropy and Information Gain
+
+Entropy measures the disorder (uncertainty) at a node:
+
+$$H(t) = -\sum_{k=1}^{K} p_k \log_2(p_k)$$
+
+**Information gain** is the reduction in entropy after a split:
+
+$$\text{IG} = H(\text{parent}) - \sum_{i} \frac{|t_i|}{|t_{\text{parent}}|} H(t_i)$$
+
+where the sum is over child nodes, weighted by the fraction of samples in each child.
+
+```python
+import numpy as np
+
+def gini(labels):
+    """Compute Gini impurity for a set of labels."""
+    _, counts = np.unique(labels, return_counts=True)
+    probs = counts / len(labels)
+    return 1 - np.sum(probs ** 2)
+
+def entropy(labels):
+    """Compute entropy for a set of labels."""
+    _, counts = np.unique(labels, return_counts=True)
+    probs = counts / len(labels)
+    return -np.sum(probs * np.log2(probs + 1e-10))
+
+# Example: node with 30 class A, 10 class B
+labels = np.array([0]*30 + [1]*10)
+print(f"Gini impurity: {gini(labels):.4f}")
+print(f"Entropy:       {entropy(labels):.4f}")
+
+# Pure node
+pure = np.array([0]*40)
+print(f"\nPure node Gini: {gini(pure):.4f}")
+print(f"Pure node entropy: {entropy(pure):.4f}")
+```
+
+### Gini vs. Entropy
+
+In practice, Gini and entropy produce very similar trees. Gini is slightly faster to compute (no logarithm) and is the default in scikit-learn.
+
+---
+
+## Training a Decision Tree
+
+```python
+from sklearn.datasets import load_iris
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+
+# Load data
+iris = load_iris()
+X_train, X_test, y_train, y_test = train_test_split(
+    iris.data, iris.target, test_size=0.2, random_state=42, stratify=iris.target
+)
+
+# Train a decision tree
+tree = DecisionTreeClassifier(max_depth=3, random_state=42)
+tree.fit(X_train, y_train)
+
+# Visualize the tree
+plt.figure(figsize=(16, 8))
+plot_tree(
+    tree,
+    feature_names=iris.feature_names,
+    class_names=iris.target_names,
+    filled=True,
+    rounded=True,
+    fontsize=10,
+)
+plt.title("Decision Tree for Iris Classification")
+plt.tight_layout()
+plt.show()
+
+print(f"Training accuracy: {tree.score(X_train, y_train):.3f}")
+print(f"Test accuracy:     {tree.score(X_test, y_test):.3f}")
+```
+
+### Decision Boundaries
+
+Unlike logistic regression, decision trees create **axis-aligned rectangular** boundaries:
+
+```python
+from sklearn.datasets import make_moons
+import numpy as np
+import matplotlib.pyplot as plt
+
+X, y = make_moons(n_samples=300, noise=0.25, random_state=42)
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+depths = [1, 5, None]
+titles = ["max_depth=1 (Underfitting)", "max_depth=5 (Good)", "No limit (Overfitting)"]
+
+for ax, depth, title in zip(axes, depths, titles):
+    tree = DecisionTreeClassifier(max_depth=depth, random_state=42)
+    tree.fit(X, y)
+
+    xx, yy = np.meshgrid(
+        np.linspace(X[:, 0].min()-0.5, X[:, 0].max()+0.5, 200),
+        np.linspace(X[:, 1].min()-0.5, X[:, 1].max()+0.5, 200)
+    )
+    Z = tree.predict(np.column_stack([xx.ravel(), yy.ravel()])).reshape(xx.shape)
+
+    ax.contourf(xx, yy, Z, alpha=0.3, cmap="RdBu")
+    ax.scatter(X[:, 0], X[:, 1], c=y, cmap="RdBu", edgecolors="k", s=20)
+    ax.set_title(title)
+
+plt.tight_layout()
+plt.show()
+```
+
+---
+
+## Overfitting in Decision Trees
+
+An unrestricted decision tree will grow until every leaf is pure — perfectly memorizing the training data, including noise. This is severe overfitting.
+
+### Pruning Strategies
+
+Control tree complexity with hyperparameters:
+
+| Parameter | Effect |
+|-----------|--------|
+| `max_depth` | Maximum depth of the tree |
+| `min_samples_split` | Minimum samples required to split a node |
+| `min_samples_leaf` | Minimum samples in a leaf node |
+| `max_leaf_nodes` | Maximum total number of leaves |
+| `max_features` | Number of features considered per split |
+
+<CommonMistake>
+A common mistake is trusting a decision tree's training accuracy. An unrestricted tree can achieve 100% training accuracy on any dataset — but it has just memorized the data. Always evaluate on a validation or test set. If training accuracy is much higher than test accuracy, you are overfitting and need to restrict the tree.
+</CommonMistake>
+
+```python
+from sklearn.model_selection import cross_val_score
+import numpy as np
+
+# Compare different max_depth values
+depths = range(1, 20)
+train_scores = []
+cv_scores = []
+
+for depth in depths:
+    tree = DecisionTreeClassifier(max_depth=depth, random_state=42)
+    tree.fit(X_train, y_train)
+    train_scores.append(tree.score(X_train, y_train))
+    cv = cross_val_score(tree, X_train, y_train, cv=5)
+    cv_scores.append(cv.mean())
+
+plt.figure(figsize=(8, 5))
+plt.plot(depths, train_scores, "o-", label="Training accuracy")
+plt.plot(depths, cv_scores, "o-", label="CV accuracy")
+plt.xlabel("max_depth")
+plt.ylabel("Accuracy")
+plt.title("Decision Tree: Overfitting vs. max_depth")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()
+```
+
+---
+
+## Random Forests: Bagging Trees
+
+A single decision tree is unstable — small changes in the data can produce a completely different tree. **Random forests** fix this by building many trees and averaging their predictions.
+
+### How It Works
+
+1. **Bootstrap sampling**: for each tree, draw $m$ samples with replacement from the training set (some samples appear multiple times, others are left out).
+2. **Feature randomization**: at each split, consider only a random subset of features (typically $\sqrt{n}$ for classification, $n/3$ for regression).
+3. **Aggregate**: for classification, take a majority vote; for regression, take the mean.
+
+This combination of bootstrap sampling and feature randomization is called **bagging** (bootstrap aggregating).
+
+<MathNote>
+Why does bagging work? If individual trees have variance $\sigma^2$ and their predictions have pairwise correlation $\rho$, then the variance of the average of $B$ trees is:
+
+$$\text{Var}_{\text{ensemble}} = \rho \sigma^2 + \frac{1 - \rho}{B} \sigma^2$$
+
+By making trees decorrelated (through feature randomization, reducing $\rho$) and increasing $B$, we can dramatically reduce variance without increasing bias. This is why random forests almost always outperform single decision trees.
+</MathNote>
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.datasets import make_moons
+from sklearn.model_selection import cross_val_score
+
+X, y = make_moons(n_samples=500, noise=0.3, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Single tree vs random forest
+tree = DecisionTreeClassifier(random_state=42)
+forest = RandomForestClassifier(n_estimators=100, random_state=42)
+
+tree_scores = cross_val_score(tree, X_train, y_train, cv=5)
+forest_scores = cross_val_score(forest, X_train, y_train, cv=5)
+
+print(f"Decision Tree:  {tree_scores.mean():.3f} +/- {tree_scores.std():.3f}")
+print(f"Random Forest:  {forest_scores.mean():.3f} +/- {forest_scores.std():.3f}")
+```
+
+### Feature Importance
+
+Random forests can tell you which features matter most:
+
+```python
+from sklearn.datasets import load_breast_cancer
+
+data = load_breast_cancer()
+X_train, X_test, y_train, y_test = train_test_split(
+    data.data, data.target, test_size=0.2, random_state=42
+)
+
+forest = RandomForestClassifier(n_estimators=200, random_state=42)
+forest.fit(X_train, y_train)
+
+# Feature importance
+importances = forest.feature_importances_
+indices = np.argsort(importances)[::-1][:10]  # top 10
+
+plt.figure(figsize=(10, 5))
+plt.bar(range(10), importances[indices])
+plt.xticks(range(10), [data.feature_names[i] for i in indices], rotation=45, ha="right")
+plt.title("Top 10 Feature Importances (Random Forest)")
+plt.ylabel("Importance")
+plt.tight_layout()
+plt.show()
+
+print(f"\nTest accuracy: {forest.score(X_test, y_test):.3f}")
+```
+
+---
+
+## Boosting: Learning from Mistakes
+
+While bagging builds trees **independently** and averages them, **boosting** builds trees **sequentially**, where each new tree focuses on the mistakes of the previous ones.
+
+### AdaBoost
+
+1. Train a weak learner (shallow tree) on the data.
+2. Increase the weights of misclassified samples.
+3. Train the next weak learner on the reweighted data.
+4. Repeat, then combine with a weighted vote.
+
+### Gradient Boosting
+
+Instead of reweighting samples, gradient boosting fits each new tree to the **residual errors** (negative gradient of the loss function) of the current ensemble.
+
+```python
+from sklearn.ensemble import GradientBoostingClassifier, AdaBoostClassifier
+
+# Compare methods
+models = {
+    "Decision Tree": DecisionTreeClassifier(max_depth=5, random_state=42),
+    "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
+    "AdaBoost": AdaBoostClassifier(n_estimators=100, random_state=42),
+    "Gradient Boosting": GradientBoostingClassifier(
+        n_estimators=100, max_depth=3, learning_rate=0.1, random_state=42
+    ),
+}
+
+print("5-Fold Cross-Validation Accuracy:")
+print("-" * 50)
+for name, model in models.items():
+    scores = cross_val_score(model, X_train, y_train, cv=5)
+    print(f"{name:25s}  {scores.mean():.3f} +/- {scores.std():.3f}")
+```
+
+### Bagging vs. Boosting
+
+| Aspect | Bagging (Random Forest) | Boosting (GBM, XGBoost) |
+|--------|------------------------|------------------------|
+| Trees built | Independently, in parallel | Sequentially, each fixes prior errors |
+| Primary effect | Reduces variance | Reduces bias (and variance) |
+| Overfitting risk | Low (hard to overfit with more trees) | Higher (can overfit with too many iterations) |
+| Speed | Fast (parallelizable) | Slower (sequential) |
+| Tuning difficulty | Easy (few hyperparameters) | Moderate (learning rate, depth, iterations) |
+
+---
+
+## XGBoost: The Industry Standard
+
+XGBoost (Extreme Gradient Boosting) is an optimized implementation of gradient boosting that adds:
+- **Regularization** built into the objective function
+- **Clever handling of sparse data** and missing values
+- **Parallelized tree construction** (within a single tree)
+- **Built-in cross-validation** and early stopping
+
+```python
+# pip install xgboost
+from xgboost import XGBClassifier
+from sklearn.model_selection import cross_val_score, GridSearchCV
+
+xgb = XGBClassifier(
+    n_estimators=100,
+    max_depth=3,
+    learning_rate=0.1,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    random_state=42,
+    eval_metric="logloss",
+)
+
+scores = cross_val_score(xgb, X_train, y_train, cv=5)
+print(f"XGBoost CV Accuracy: {scores.mean():.3f} +/- {scores.std():.3f}")
+
+# Hyperparameter tuning
+param_grid = {
+    "max_depth": [3, 5, 7],
+    "learning_rate": [0.01, 0.1, 0.2],
+    "n_estimators": [50, 100, 200],
+}
+
+grid = GridSearchCV(xgb, param_grid, cv=3, scoring="accuracy", n_jobs=-1)
+grid.fit(X_train, y_train)
+print(f"\nBest parameters: {grid.best_params_}")
+print(f"Best CV accuracy: {grid.best_score_:.3f}")
+```
+
+<KeyTakeaway>
+For tabular/structured data, start with a random forest as your baseline. If you need better performance, move to gradient boosting (XGBoost or LightGBM). These ensemble methods are the workhorses of applied ML. Neural networks excel at images, text, and audio — but for spreadsheet-like data, tree-based ensembles are usually the better choice.
+</KeyTakeaway>
+
+---
+
+## When to Use Which Model
+
+```python
+# A practical comparison on a real dataset
+from sklearn.datasets import fetch_california_housing
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import Ridge
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import cross_val_score
+
+housing = fetch_california_housing()
+X, y = housing.data, housing.target
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+models = {
+    "Ridge Regression": Pipeline([("scaler", StandardScaler()), ("model", Ridge())]),
+    "Decision Tree": DecisionTreeRegressor(max_depth=10, random_state=42),
+    "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
+    "Gradient Boosting": GradientBoostingRegressor(
+        n_estimators=200, max_depth=5, learning_rate=0.1, random_state=42
+    ),
+}
+
+print("California Housing - 5-Fold CV (R^2):")
+print("-" * 55)
+for name, model in models.items():
+    scores = cross_val_score(model, X_train, y_train, cv=5, scoring="r2")
+    print(f"{name:25s}  R^2 = {scores.mean():.3f} +/- {scores.std():.3f}")
+```
+
+<WhyThisMatters>
+Notice that tree ensembles do not require feature scaling — they only care about the ordering of values, not their magnitude. This is a major practical advantage over linear models and KNN. However, they can still benefit from good feature engineering and careful hyperparameter tuning.
+</WhyThisMatters>
+
+---
+
+## Summary
+
+| Concept | Key Idea |
+|---------|----------|
+| **Decision tree** | Recursive binary splits on features to create pure leaf nodes |
+| **Gini impurity** | $1 - \sum p_k^2$, measures node impurity |
+| **Entropy** | $-\sum p_k \log_2 p_k$, alternative impurity measure |
+| **Information gain** | Reduction in impurity after a split |
+| **Overfitting** | Unrestricted trees memorize data; use max_depth, min_samples_leaf |
+| **Random forest** | Bagging + feature randomization = decorrelated trees |
+| **Bagging** | Build trees independently on bootstrap samples, then average |
+| **Boosting** | Build trees sequentially, each correcting prior errors |
+| **XGBoost** | Optimized gradient boosting with regularization |
+
+Next: we leave the world of labeled data and explore unsupervised learning — clustering and dimensionality reduction.

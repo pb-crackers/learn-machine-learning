@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "How does dropout prevent overfitting?",
+      "options": [
+        "It removes the least important neurons permanently from the network",
+        "It randomly zeros out neuron outputs during training, forcing the network to learn redundant representations",
+        "It reduces the learning rate when overfitting is detected",
+        "It adds noise to the input data to create data augmentation"
+      ],
+      "correct": "B",
+      "explanation": "Dropout randomly sets neuron outputs to zero during each training step (with probability p). This prevents the network from relying on any single neuron, encouraging it to learn distributed, redundant representations that generalize better. During evaluation, all neurons are active."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "What does Batch Normalization do and why does it help?",
+      "options": [
+        "It normalizes the input images to have pixel values between 0 and 1",
+        "It normalizes layer activations to zero mean and unit variance per mini-batch, stabilizing training",
+        "It sorts training samples into batches of similar difficulty",
+        "It normalizes the learning rate based on batch size"
+      ],
+      "correct": "B",
+      "explanation": "Batch Normalization normalizes the activations within each mini-batch to have zero mean and unit variance, then applies learnable scale and shift parameters. This stabilizes the distribution of inputs to each layer, allowing higher learning rates and faster convergence, and provides a mild regularization effect."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "Why should data augmentation NOT be applied to the validation or test set?",
+      "options": [
+        "It would make evaluation too slow",
+        "Augmentation changes image sizes, which breaks the model",
+        "Evaluation must use consistent, clean inputs to accurately measure model performance",
+        "PyTorch does not support augmentation during evaluation"
+      ],
+      "correct": "C",
+      "explanation": "Data augmentation introduces random variations (flips, rotations, crops) to increase training diversity. Applying these random transforms during evaluation would make results non-deterministic and not representative of real-world performance. You want to measure how well the model performs on clean, unmodified data."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What makes Adam different from standard SGD?",
+      "options": [
+        "Adam uses a fixed learning rate while SGD adapts it",
+        "Adam maintains per-parameter adaptive learning rates using first and second moment estimates of gradients",
+        "Adam does not require computing gradients",
+        "Adam only works with convolutional neural networks"
+      ],
+      "correct": "B",
+      "explanation": "Adam combines momentum (first moment: running average of gradients) with RMSProp (second moment: running average of squared gradients) to adapt the learning rate for each parameter individually. Parameters with large gradients get smaller effective learning rates, and vice versa, leading to more stable and efficient optimization."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "What is the main advantage of transfer learning over training from scratch?",
+      "options": [
+        "It always produces more accurate models",
+        "It does not require any training data",
+        "It leverages features learned from large datasets, requiring far less data and compute for your specific task",
+        "It eliminates the need for GPUs"
+      ],
+      "correct": "C",
+      "explanation": "Transfer learning reuses a model pretrained on a large dataset (like ImageNet with millions of images). The pretrained model has already learned general visual features (edges, textures, shapes). You only need to adapt the final layers for your specific task, which requires much less data and compute time. This is especially powerful when you have limited training data."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "When fine-tuning a pretrained model, why should you use a smaller learning rate for pretrained layers than for new layers?",
+      "options": [
+        "Pretrained layers are already on GPU and need smaller updates",
+        "Pretrained layers already contain useful features — large updates would destroy them",
+        "Smaller learning rates reduce memory usage for pretrained layers",
+        "PyTorch requires different learning rates for different layer types"
+      ],
+      "correct": "B",
+      "explanation": "Pretrained layers already contain high-quality feature representations learned from millions of images. Using a large learning rate would make large weight changes that destroy these valuable features. A small learning rate allows gentle adjustments to adapt the features to your task without losing what was already learned. New layers (with random initialization) need a larger learning rate to learn quickly."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "In which scenario is deep learning likely OVERKILL compared to classical ML?",
+      "options": [
+        "Image classification with 100,000 labeled photos",
+        "Predicting house prices from a table of 20 features with 5,000 rows",
+        "Real-time object detection in autonomous driving",
+        "Generating natural language responses to user queries"
+      ],
+      "correct": "B",
+      "explanation": "For tabular data with a modest number of rows and features, gradient-boosted trees (XGBoost, LightGBM) typically match or outperform neural networks while being faster to train, easier to interpret, and requiring less tuning. Deep learning excels on unstructured data (images, text, audio) and very large datasets, not on small tabular problems."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "What is early stopping and why is it used?",
+      "options": [
+        "Stopping training when the training loss reaches zero to save compute",
+        "Stopping training when the validation performance stops improving to prevent overfitting",
+        "Stopping training after a fixed number of epochs regardless of performance",
+        "Stopping training when the learning rate becomes too small"
+      ],
+      "correct": "B",
+      "explanation": "Early stopping monitors validation performance during training and stops when it hasn't improved for a specified number of epochs (patience). This prevents the model from overfitting — continued training after the validation optimum only memorizes training noise. The model weights from the best validation epoch are saved and used for the final model."
+    }
+  ]
+}

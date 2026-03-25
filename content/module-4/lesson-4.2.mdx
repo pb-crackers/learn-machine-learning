@@ -1,0 +1,434 @@
+---
+module: 4
+lesson: 2
+title: "Sequence Models: RNNs & LSTMs"
+description: "Understand how recurrent neural networks process sequential data by maintaining hidden state, and why LSTMs and GRUs were invented to solve the vanishing gradient problem."
+prerequisites: ["4.1"]
+estimatedMinutes: 55
+---
+
+# Sequence Models: RNNs & LSTMs
+
+In the previous lesson, we saw that bag-of-words and even word embeddings throw away a critical piece of information: **order**. The sentence "the dog chased the cat" means something very different from "the cat chased the dog", yet their bag-of-words representations are identical, and averaging their word embeddings yields the same vector.
+
+Language is inherently sequential. Meaning builds up word by word, and what a word means often depends on everything that came before it. We need models that can process sequences one element at a time, accumulating information as they go. Enter the **Recurrent Neural Network (RNN)**.
+
+<WhyThisMatters>
+Even though transformers have largely replaced RNNs in production NLP, understanding RNNs is essential for three reasons: (1) they introduce the concept of hidden state, which is fundamental to all sequence models, (2) the vanishing gradient problem they suffer from motivates the attention mechanism in transformers, and (3) LSTMs are still used in specialized applications like on-device inference and time-series forecasting.
+</WhyThisMatters>
+
+## Why Fixed-Size Inputs Fail for Sequences
+
+A standard feedforward neural network takes a fixed-size input vector and produces a fixed-size output. To process a sentence, you would need to either:
+
+1. **Pad/truncate** all sentences to the same length -- wasteful and lossy.
+2. **Average** the word embeddings -- loses all word order.
+3. **Concatenate** embeddings for a fixed window -- ignores words outside the window and has a parameter count that scales with window size.
+
+None of these approaches can handle the fundamental property of language: sentences vary in length, and information from early in the sentence can be critical for understanding words much later.
+
+## The Recurrent Neural Network
+
+An RNN processes a sequence one element at a time, maintaining a **hidden state** vector $\mathbf{h}_t$ that serves as the model's "memory" of everything it has seen so far.
+
+### The Core Equations
+
+At each time step $t$, the RNN takes the current input $\mathbf{x}_t$ (e.g., the embedding of the current word) and the previous hidden state $\mathbf{h}_{t-1}$, and produces a new hidden state:
+
+<MathNote>
+$$\mathbf{h}_t = \tanh(\mathbf{W}_{hh} \mathbf{h}_{t-1} + \mathbf{W}_{xh} \mathbf{x}_t + \mathbf{b}_h)$$
+
+$$\mathbf{y}_t = \mathbf{W}_{hy} \mathbf{h}_t + \mathbf{b}_y$$
+
+Where:
+- $\mathbf{x}_t \in \mathbb{R}^d$ is the input at time $t$ (e.g., a word embedding)
+- $\mathbf{h}_t \in \mathbb{R}^n$ is the hidden state at time $t$
+- $\mathbf{y}_t$ is the output at time $t$
+- $\mathbf{W}_{hh} \in \mathbb{R}^{n \times n}$, $\mathbf{W}_{xh} \in \mathbb{R}^{n \times d}$, $\mathbf{W}_{hy}$ are **shared** weight matrices (the same weights are used at every time step)
+</MathNote>
+
+The key insight: **the same weights are applied at every time step**. This is called **weight sharing**, and it means:
+- The model can handle sequences of any length.
+- It learns a general "transition function" rather than position-specific weights.
+
+### Implementing a Simple RNN from Scratch
+
+```python
+import numpy as np
+
+class SimpleRNN:
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        # Xavier initialization
+        scale_xh = np.sqrt(2.0 / (input_dim + hidden_dim))
+        scale_hh = np.sqrt(2.0 / (hidden_dim + hidden_dim))
+
+        self.W_xh = np.random.randn(hidden_dim, input_dim) * scale_xh
+        self.W_hh = np.random.randn(hidden_dim, hidden_dim) * scale_hh
+        self.W_hy = np.random.randn(output_dim, hidden_dim) * 0.01
+        self.b_h = np.zeros((hidden_dim, 1))
+        self.b_y = np.zeros((output_dim, 1))
+
+    def forward(self, inputs):
+        """
+        inputs: list of column vectors, one per time step
+        Returns: list of outputs and list of hidden states
+        """
+        h = np.zeros((self.W_hh.shape[0], 1))  # Initial hidden state
+        hidden_states = [h]
+        outputs = []
+
+        for x_t in inputs:
+            # Core RNN computation
+            h = np.tanh(self.W_hh @ h + self.W_xh @ x_t + self.b_h)
+            y_t = self.W_hy @ h + self.b_y
+            hidden_states.append(h)
+            outputs.append(y_t)
+
+        return outputs, hidden_states
+
+# Example: process a sequence of 5 words with 50-dim embeddings
+rnn = SimpleRNN(input_dim=50, hidden_dim=128, output_dim=10)
+sequence = [np.random.randn(50, 1) for _ in range(5)]
+outputs, states = rnn.forward(sequence)
+print(f"Output at each step: {[o.shape for o in outputs]}")
+print(f"Final hidden state: {states[-1].shape}")
+```
+
+### RNN Architectures for Different Tasks
+
+RNNs are flexible because you can read outputs at different points:
+
+- **Many-to-one** (sentiment analysis): Read only the final hidden state $\mathbf{h}_T$ as a summary of the whole sequence, feed it to a classifier.
+- **Many-to-many** (named entity recognition): Read an output at every time step to label each word.
+- **One-to-many** (text generation): Given a starting token, generate a sequence by feeding each output back as the next input.
+- **Encoder-decoder** (translation): One RNN reads the input sequence (encoder), its final hidden state initializes a second RNN that generates the output sequence (decoder).
+
+```python
+import torch
+import torch.nn as nn
+
+class SentimentRNN(nn.Module):
+    """Many-to-one RNN for sentiment classification."""
+
+    def __init__(self, vocab_size, embed_dim, hidden_dim, num_classes):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, embed_dim)
+        self.rnn = nn.RNN(embed_dim, hidden_dim, batch_first=True)
+        self.fc = nn.Linear(hidden_dim, num_classes)
+
+    def forward(self, x):
+        # x: (batch, seq_len) of word indices
+        embedded = self.embedding(x)           # (batch, seq_len, embed_dim)
+        output, h_n = self.rnn(embedded)       # h_n: (1, batch, hidden_dim)
+        h_final = h_n.squeeze(0)               # (batch, hidden_dim)
+        logits = self.fc(h_final)              # (batch, num_classes)
+        return logits
+
+model = SentimentRNN(vocab_size=10000, embed_dim=100, hidden_dim=256, num_classes=2)
+dummy_input = torch.randint(0, 10000, (32, 50))  # batch of 32, seq len 50
+output = model(dummy_input)
+print(f"Output shape: {output.shape}")  # (32, 2)
+```
+
+## The Vanishing Gradient Problem
+
+RNNs look elegant on paper, but they have a devastating flaw. During backpropagation through time (BPTT), gradients must flow backward through every time step. At each step, the gradient is multiplied by $\mathbf{W}_{hh}$. After $T$ time steps, the gradient involves:
+
+$$\frac{\partial \mathbf{h}_T}{\partial \mathbf{h}_1} = \prod_{t=2}^{T} \frac{\partial \mathbf{h}_t}{\partial \mathbf{h}_{t-1}}$$
+
+Each factor involves the Jacobian of tanh (values between 0 and 1) multiplied by $\mathbf{W}_{hh}$.
+
+<MathNote>
+If the largest singular value of $\mathbf{W}_{hh}$ is less than 1, then repeated multiplication causes the gradient to shrink **exponentially**:
+
+$$\|\text{gradient}\| \propto \lambda_{\max}^T$$
+
+where $\lambda_{\max} < 1$ is the largest singular value. For a 100-word sentence, if $\lambda_{\max} = 0.9$, the gradient shrinks by a factor of $0.9^{100} \approx 2.66 \times 10^{-5}$.
+
+Conversely, if $\lambda_{\max} > 1$, gradients **explode** exponentially. Gradient clipping mitigates explosion, but there is no simple fix for vanishing.
+</MathNote>
+
+### What This Means in Practice
+
+The vanishing gradient problem means that a vanilla RNN effectively cannot learn dependencies longer than about 10-20 time steps. If the subject of a sentence appears at word 3 and the verb that must agree with it appears at word 25, the gradient signal connecting them will be negligibly small.
+
+```python
+# Demonstrating vanishing gradients
+import torch
+
+hidden_dim = 128
+W_hh = torch.randn(hidden_dim, hidden_dim) * 0.5  # Slightly contractive
+
+# Simulate gradient flow through 50 time steps
+gradient = torch.eye(hidden_dim)
+norms = []
+for t in range(50):
+    gradient = gradient @ W_hh
+    norms.append(gradient.norm().item())
+
+print(f"Gradient norm at step 1:  {norms[0]:.4f}")
+print(f"Gradient norm at step 10: {norms[9]:.6f}")
+print(f"Gradient norm at step 25: {norms[24]:.10f}")
+print(f"Gradient norm at step 50: {norms[49]:.15f}")
+# The norm shrinks exponentially!
+```
+
+<CommonMistake>
+A common misconception is that the vanishing gradient problem means the RNN "forgets" earlier inputs. That is not quite right. The hidden state $\mathbf{h}_t$ can still carry information from early time steps in its forward pass. The problem is that the model cannot *learn* to use that information, because the gradient signal from the loss back to those early steps is too small to drive meaningful weight updates.
+</CommonMistake>
+
+## LSTM: Long Short-Term Memory
+
+Hochreiter and Schmidhuber (1997) invented the LSTM specifically to solve the vanishing gradient problem. The core idea: add an explicit **cell state** $\mathbf{c}_t$ that acts as a "conveyor belt" for information, controlled by learned **gates** that decide what to remember, forget, and output.
+
+### The Gating Mechanism
+
+An LSTM has three gates, each a sigmoid-activated layer that outputs values between 0 and 1:
+
+<MathNote>
+**Forget gate** -- what to erase from the cell state:
+$$\mathbf{f}_t = \sigma(\mathbf{W}_f [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_f)$$
+
+**Input gate** -- what new information to write:
+$$\mathbf{i}_t = \sigma(\mathbf{W}_i [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_i)$$
+
+**Candidate cell state** -- proposed new information:
+$$\tilde{\mathbf{c}}_t = \tanh(\mathbf{W}_c [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_c)$$
+
+**Cell state update** -- combine old (selectively forgotten) with new (selectively added):
+$$\mathbf{c}_t = \mathbf{f}_t \odot \mathbf{c}_{t-1} + \mathbf{i}_t \odot \tilde{\mathbf{c}}_t$$
+
+**Output gate** -- what to expose as the hidden state:
+$$\mathbf{o}_t = \sigma(\mathbf{W}_o [\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_o)$$
+
+$$\mathbf{h}_t = \mathbf{o}_t \odot \tanh(\mathbf{c}_t)$$
+
+Here $\odot$ denotes element-wise (Hadamard) multiplication, $\sigma$ is the sigmoid function, and $[\mathbf{h}_{t-1}, \mathbf{x}_t]$ means concatenation.
+</MathNote>
+
+### Why This Solves Vanishing Gradients
+
+The cell state update equation is the key:
+
+$$\mathbf{c}_t = \mathbf{f}_t \odot \mathbf{c}_{t-1} + \mathbf{i}_t \odot \tilde{\mathbf{c}}_t$$
+
+During backpropagation, the gradient flows through $\mathbf{c}_t$ back to $\mathbf{c}_{t-1}$ via multiplication by $\mathbf{f}_t$. If the forget gate is close to 1 (meaning "keep this information"), the gradient passes through nearly unchanged -- no vanishing. The LSTM can learn to set $\mathbf{f}_t \approx 1$ for important information, creating a gradient "highway" through time.
+
+### LSTM in PyTorch
+
+```python
+import torch
+import torch.nn as nn
+
+class LSTMClassifier(nn.Module):
+    def __init__(self, vocab_size, embed_dim, hidden_dim, num_classes,
+                 num_layers=2, dropout=0.3):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
+        self.lstm = nn.LSTM(
+            input_size=embed_dim,
+            hidden_size=hidden_dim,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout,
+            bidirectional=True,  # Process sequence in both directions
+        )
+        # bidirectional doubles the output dimension
+        self.fc = nn.Linear(hidden_dim * 2, num_classes)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, lengths=None):
+        embedded = self.dropout(self.embedding(x))
+
+        if lengths is not None:
+            # Pack padded sequences for efficiency
+            packed = nn.utils.rnn.pack_padded_sequence(
+                embedded, lengths.cpu(), batch_first=True, enforce_sorted=False
+            )
+            output, (h_n, c_n) = self.lstm(packed)
+        else:
+            output, (h_n, c_n) = self.lstm(embedded)
+
+        # h_n: (num_layers * num_directions, batch, hidden_dim)
+        # Concatenate final hidden states from both directions
+        h_forward = h_n[-2]  # Last layer, forward
+        h_backward = h_n[-1]  # Last layer, backward
+        h_combined = torch.cat([h_forward, h_backward], dim=1)
+
+        logits = self.fc(self.dropout(h_combined))
+        return logits
+
+model = LSTMClassifier(
+    vocab_size=20000, embed_dim=128, hidden_dim=256, num_classes=3
+)
+x = torch.randint(0, 20000, (16, 100))  # Batch of 16, max length 100
+logits = model(x)
+print(f"Output: {logits.shape}")  # (16, 3)
+```
+
+### Bidirectional LSTMs
+
+A standard LSTM only sees past context (left to right). A **bidirectional LSTM** processes the sequence in both directions and concatenates the hidden states:
+
+- Forward LSTM: reads "The cat sat on the mat" left to right
+- Backward LSTM: reads "mat the on sat cat The" (right to left)
+
+At each position, the model has access to both past and future context. This is important for tasks like named entity recognition where the words after an entity can help identify it.
+
+## GRU: Gated Recurrent Unit
+
+The GRU (Cho et al., 2014) simplifies the LSTM by merging the cell state and hidden state into a single vector and using two gates instead of three:
+
+<MathNote>
+**Update gate** (combines LSTM's forget and input gates):
+$$\mathbf{z}_t = \sigma(\mathbf{W}_z [\mathbf{h}_{t-1}, \mathbf{x}_t])$$
+
+**Reset gate** (controls how much past state to ignore):
+$$\mathbf{r}_t = \sigma(\mathbf{W}_r [\mathbf{h}_{t-1}, \mathbf{x}_t])$$
+
+**Candidate hidden state**:
+$$\tilde{\mathbf{h}}_t = \tanh(\mathbf{W} [\mathbf{r}_t \odot \mathbf{h}_{t-1}, \mathbf{x}_t])$$
+
+**Final hidden state** (interpolation between old and new):
+$$\mathbf{h}_t = (1 - \mathbf{z}_t) \odot \mathbf{h}_{t-1} + \mathbf{z}_t \odot \tilde{\mathbf{h}}_t$$
+</MathNote>
+
+The GRU has fewer parameters than the LSTM, trains faster, and often performs comparably. In practice, the choice between LSTM and GRU is often made empirically.
+
+```python
+# GRU in PyTorch -- almost identical API to LSTM
+gru = nn.GRU(input_size=128, hidden_size=256, num_layers=2,
+             batch_first=True, bidirectional=True)
+x = torch.randn(16, 50, 128)  # (batch, seq_len, features)
+output, h_n = gru(x)  # No cell state c_n -- GRU has no separate cell
+print(f"Output: {output.shape}")   # (16, 50, 512) -- 256 * 2 directions
+print(f"Hidden: {h_n.shape}")      # (4, 16, 256) -- 2 layers * 2 directions
+```
+
+## Training an LSTM Text Classifier: Full Example
+
+```python
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, Dataset
+from torch.nn.utils.rnn import pad_sequence
+
+class TextDataset(Dataset):
+    def __init__(self, texts, labels, vocab):
+        self.texts = texts
+        self.labels = labels
+        self.vocab = vocab
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, idx):
+        tokens = self.texts[idx].lower().split()
+        indices = [self.vocab.get(w, 1) for w in tokens]  # 1 = <UNK>
+        return torch.tensor(indices), self.labels[idx]
+
+def collate_fn(batch):
+    """Pad sequences to the same length within a batch."""
+    texts, labels = zip(*batch)
+    lengths = torch.tensor([len(t) for t in texts])
+    padded = pad_sequence(texts, batch_first=True, padding_value=0)
+    return padded, torch.tensor(labels), lengths
+
+# Training loop
+def train_epoch(model, dataloader, optimizer, criterion, device):
+    model.train()
+    total_loss = 0
+    correct = 0
+    total = 0
+
+    for batch_x, batch_y, lengths in dataloader:
+        batch_x = batch_x.to(device)
+        batch_y = batch_y.to(device)
+
+        optimizer.zero_grad()
+        logits = model(batch_x, lengths)
+        loss = criterion(logits, batch_y)
+        loss.backward()
+
+        # Gradient clipping -- essential for RNNs!
+        nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+
+        optimizer.step()
+
+        total_loss += loss.item() * batch_x.size(0)
+        preds = logits.argmax(dim=1)
+        correct += (preds == batch_y).sum().item()
+        total += batch_x.size(0)
+
+    return total_loss / total, correct / total
+```
+
+<CommonMistake>
+Always use **gradient clipping** when training RNNs and LSTMs. While LSTMs mitigate the vanishing gradient problem, they do NOT solve the exploding gradient problem. Without clipping, a single batch with unusual data can produce enormous gradients that destroy your learned weights. `nn.utils.clip_grad_norm_` with max_norm between 1.0 and 5.0 is standard practice.
+</CommonMistake>
+
+## The Encoder-Decoder Architecture
+
+The most influential RNN architecture for NLP was the **encoder-decoder** (or **sequence-to-sequence**) model, introduced for machine translation:
+
+1. **Encoder RNN**: Reads the source sentence word by word, producing a final hidden state $\mathbf{h}_T$ that encodes the meaning of the entire input.
+2. **Decoder RNN**: Initialized with $\mathbf{h}_T$, generates the target sentence one word at a time, feeding each generated word back as input for the next step.
+
+```python
+class Seq2Seq(nn.Module):
+    def __init__(self, src_vocab, tgt_vocab, embed_dim, hidden_dim):
+        super().__init__()
+        self.encoder_embed = nn.Embedding(src_vocab, embed_dim)
+        self.decoder_embed = nn.Embedding(tgt_vocab, embed_dim)
+        self.encoder = nn.LSTM(embed_dim, hidden_dim, batch_first=True)
+        self.decoder = nn.LSTM(embed_dim, hidden_dim, batch_first=True)
+        self.output_proj = nn.Linear(hidden_dim, tgt_vocab)
+
+    def forward(self, src, tgt):
+        # Encode
+        src_emb = self.encoder_embed(src)
+        _, (h, c) = self.encoder(src_emb)
+
+        # Decode (teacher forcing: feed ground truth target as input)
+        tgt_emb = self.decoder_embed(tgt)
+        dec_out, _ = self.decoder(tgt_emb, (h, c))
+
+        logits = self.output_proj(dec_out)
+        return logits
+```
+
+### The Bottleneck Problem
+
+This architecture has a critical flaw: the entire meaning of the source sentence must be compressed into a single fixed-size vector $\mathbf{h}_T$. For short sentences this works, but for long sentences, this bottleneck severely limits performance.
+
+This problem directly motivated the invention of the **attention mechanism** -- the subject of our next lesson -- which allows the decoder to look back at all encoder hidden states rather than relying on a single compressed vector.
+
+<KeyTakeaway>
+RNNs process sequences by maintaining a hidden state that evolves at each time step. Vanilla RNNs suffer from vanishing gradients, making them unable to learn long-range dependencies. LSTMs solve this with a gated cell state that provides gradient highways through time. The encoder-decoder bottleneck problem motivated the attention mechanism, which eventually led to transformers replacing RNNs entirely.
+</KeyTakeaway>
+
+## Historical Importance and Legacy
+
+RNNs and LSTMs dominated NLP from roughly 2013-2017. Key milestones:
+
+| Year | Achievement | Architecture |
+|------|------------|-------------|
+| 2014 | Sequence-to-sequence translation | LSTM encoder-decoder |
+| 2014 | Neural machine translation (Google) | Stacked LSTMs + attention |
+| 2015 | Image captioning | CNN encoder + LSTM decoder |
+| 2016 | Google Translate overhaul | 8-layer LSTM with attention |
+| 2017 | "Attention Is All You Need" | **Transformers replace LSTMs** |
+
+After 2017, transformers rapidly displaced LSTMs in nearly every NLP benchmark. But the concepts introduced by RNNs -- hidden state, gating, sequence-to-sequence, attention -- live on as the conceptual foundation of modern NLP.
+
+## Summary
+
+- **RNNs** process sequences by applying the same weights at each time step, updating a hidden state that accumulates information.
+- **Vanilla RNNs** suffer from **vanishing gradients**: gradients shrink exponentially over long sequences, preventing learning of long-range dependencies.
+- **LSTMs** introduce a **cell state** with gated read/write/forget operations that create gradient highways, enabling learning over hundreds of time steps.
+- **GRUs** simplify the LSTM with fewer gates and comparable performance.
+- **Bidirectional** variants process sequences in both directions for richer representations.
+- The **encoder-decoder bottleneck** (compressing an entire sequence into one vector) motivated the **attention mechanism** that we explore next.
+- **Gradient clipping** is essential when training any recurrent model.
+
+Next, we will see how the attention mechanism -- and eventually the full transformer architecture -- eliminates the need for sequential processing entirely, enabling massive parallelism and far better modeling of long-range dependencies.

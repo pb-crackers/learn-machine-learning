@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "In the scaled dot-product attention formula Attention(Q,K,V) = softmax(QK^T / sqrt(d_k))V, why do we divide by sqrt(d_k)?",
+      "options": [
+        "To make the output values fall between 0 and 1",
+        "To prevent dot products from growing large with high dimensions, which would push softmax into saturation where gradients are near zero",
+        "To normalize the query vectors to unit length",
+        "To reduce the computational cost of the matrix multiplication"
+      ],
+      "correct": "B",
+      "explanation": "When Q and K have dimension d_k, the dot product has variance proportional to d_k. Large dot products push softmax into regions where one value is nearly 1 and the rest are nearly 0, making gradients extremely small. Dividing by sqrt(d_k) normalizes the variance back to 1, keeping softmax in a well-behaved range."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "What is the purpose of multi-head attention compared to a single attention head?",
+      "options": [
+        "It reduces computational cost by using smaller matrices",
+        "It allows the model to attend to information from different representation subspaces at different positions -- one head might capture syntax while another captures semantics",
+        "It eliminates the need for positional encoding",
+        "It makes the model deterministic during training"
+      ],
+      "correct": "B",
+      "explanation": "Each attention head has its own learned Q, K, V projections and can learn to focus on different types of relationships. In practice, different heads specialize in different patterns: some attend to adjacent words, others to syntactic dependencies, others to semantic relationships. The total computation is similar to a single large head."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "Why do transformers need positional encodings?",
+      "options": [
+        "Self-attention is permutation-invariant -- without positional information, the model cannot distinguish 'dog bites man' from 'man bites dog'",
+        "Positional encodings reduce the memory requirements of the attention matrix",
+        "They replace the need for layer normalization",
+        "They allow the model to process sequences longer than the training data"
+      ],
+      "correct": "A",
+      "explanation": "Self-attention computes pairwise interactions based on content (Q, K, V projections) but has no inherent notion of position or order. Without positional encodings, it would treat 'The cat ate the fish' and any permutation of those words identically. Positional encodings add position information to the input embeddings so the model can learn position-dependent patterns."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What do residual connections (x + f(x)) accomplish in the transformer?",
+      "options": [
+        "They force each layer to learn the identity function",
+        "They provide gradient highways that prevent vanishing gradients in deep networks, similar to how the LSTM cell state works",
+        "They double the model capacity without adding parameters",
+        "They ensure the output has the same vocabulary size as the input"
+      ],
+      "correct": "B",
+      "explanation": "Residual connections create a direct additive path for gradients to flow backward through. The gradient of x + f(x) with respect to x includes a direct '1' term, ensuring gradients never vanish completely regardless of network depth. This is conceptually the same as the LSTM cell state providing a gradient highway through time."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "What is a causal mask in the transformer decoder, and why is it needed?",
+      "options": [
+        "It masks out padding tokens so they do not affect the output",
+        "It is a lower-triangular mask that prevents each position from attending to future positions, ensuring the model can only use information from the past during generation",
+        "It randomly masks tokens during training for data augmentation",
+        "It prevents attention weights from becoming negative"
+      ],
+      "correct": "B",
+      "explanation": "During autoregressive generation, when predicting token t, the model should only see tokens 1 through t-1 (not future tokens). The causal mask sets attention scores for future positions to -infinity before softmax, making their attention weights zero. This ensures the model is trained consistently with how it will be used at inference time."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "What is the primary computational bottleneck of the standard transformer for long sequences?",
+      "options": [
+        "The feed-forward network, which has O(d^2) parameters",
+        "The embedding layer, which must store V vectors",
+        "The self-attention mechanism, which requires O(n^2) memory and computation where n is the sequence length",
+        "The layer normalization, which requires computing statistics over the full sequence"
+      ],
+      "correct": "C",
+      "explanation": "Self-attention computes an n x n attention matrix (QK^T), which requires O(n^2) memory and O(n^2 * d) computation. For a sequence of 100K tokens, this matrix alone would have 10 billion entries per head per layer. This quadratic scaling is why techniques like Flash Attention, sparse attention, and sliding window attention have been developed."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "Why did transformers largely replace RNNs for NLP tasks?",
+      "options": [
+        "Transformers use fewer parameters than RNNs",
+        "Transformers are easier to implement from scratch",
+        "Transformers enable massive parallelism (O(1) sequential operations vs O(n)) and provide O(1) path length between any two positions, enabling better long-range dependency modeling",
+        "Transformers do not require any training data"
+      ],
+      "correct": "C",
+      "explanation": "RNNs must process tokens sequentially (each hidden state depends on the previous one), making them inherently serial and slow. Transformers compute all attention interactions simultaneously via matrix multiplication, which maps perfectly to GPU hardware. Additionally, any two positions interact directly through attention (O(1) path length) rather than through a chain of hidden states (O(n) for RNNs), enabling much better long-range dependency modeling."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "In the original transformer, what is the purpose of the position-wise feed-forward network (FFN) that follows each attention sub-layer?",
+      "options": [
+        "It compresses the sequence into a single vector",
+        "It applies a non-linear transformation independently to each position, adding representational capacity beyond what attention alone provides",
+        "It replaces the need for multi-head attention in deeper layers",
+        "It converts continuous outputs back into discrete token probabilities"
+      ],
+      "correct": "B",
+      "explanation": "The FFN is a two-layer neural network (with ReLU activation) applied independently to each position. While attention excels at mixing information across positions, the FFN adds non-linear transformation capacity within each position. Research suggests FFNs act as 'key-value memories' that store factual knowledge learned during training."
+    }
+  ]
+}

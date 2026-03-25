@@ -1,0 +1,498 @@
+---
+module: 0
+lesson: 2
+title: "Pandas, Matplotlib & the ML Data Pipeline"
+description: "DataFrames, visualization, and the typical ML workflow"
+prerequisites: ["0.1"]
+estimatedMinutes: 50
+---
+
+# Pandas, Matplotlib & the ML Data Pipeline
+
+NumPy gives you raw numerical horsepower. But real-world data does not arrive as
+clean NumPy arrays -- it arrives as CSV files with column headers, missing values,
+mixed types, and messy formatting. **Pandas** is the bridge between raw data and
+the clean numerical matrices your models need, and **Matplotlib/Seaborn** let you
+visually understand what your data is doing before you model it.
+
+This lesson walks through the complete ML data pipeline: load, explore, clean,
+visualize, and prepare.
+
+---
+
+## 1. DataFrames: The Spreadsheet That Thinks
+
+A Pandas **DataFrame** is a 2-D labeled data structure -- think of it as a
+spreadsheet where every column has a name and a consistent type, and every row has
+an index.
+
+### 1.1 Loading Data
+
+```python
+import pandas as pd
+
+# Load a CSV file (the most common starting point in ML)
+df = pd.read_csv("housing.csv")
+
+# Quick inspection
+print(df.shape)          # (20640, 10) -- rows x columns
+print(df.columns)        # Index(['longitude', 'latitude', ...])
+print(df.dtypes)         # data type of each column
+df.head()                # first 5 rows
+df.info()                # concise summary: non-null counts, dtypes, memory
+df.describe()            # statistics: count, mean, std, min, 25%, 50%, 75%, max
+```
+
+`pd.read_csv` handles dozens of common quirks out of the box -- custom delimiters,
+header rows, encoding, date parsing:
+
+```python
+# Tab-separated file with no header row
+df = pd.read_csv("data.tsv", sep="\t", header=None,
+                  names=["feature_1", "feature_2", "label"])
+
+# Only load specific columns (saves memory on large files)
+df = pd.read_csv("big_dataset.csv", usecols=["age", "income", "target"])
+```
+
+<WhyThisMatters>
+Every ML project starts with data loading. In practice you will spend far more time
+wrangling data than tuning algorithms. A 2016 survey by CrowdFlower found that data
+scientists spend roughly 60% of their time cleaning and organizing data. Pandas
+proficiency directly translates to faster iteration cycles.
+</WhyThisMatters>
+
+### 1.2 Selecting and Filtering
+
+```python
+# Select a single column (returns a Series)
+ages = df["age"]
+
+# Select multiple columns (returns a DataFrame)
+subset = df[["age", "income"]]
+
+# Filter rows with boolean conditions
+wealthy = df[df["income"] > 100_000]
+
+# Combine conditions with & (and) and | (or) -- must use parentheses
+wealthy_young = df[(df["income"] > 100_000) & (df["age"] < 30)]
+
+# .loc for label-based indexing, .iloc for integer-based
+df.loc[0:4, "age":"income"]      # rows 0-4, columns from "age" to "income"
+df.iloc[0:5, 2:5]                # rows 0-4, columns 2-4 (integer positions)
+```
+
+<CommonMistake>
+When combining boolean filters, you **must** wrap each condition in parentheses:
+`df[(df["a"] > 1) & (df["b"] < 5)]`. Writing `df[df["a"] > 1 & df["b"] < 5]` will
+raise an error because Python's `&` operator has higher precedence than `>` and `<`.
+</CommonMistake>
+
+### 1.3 Handling Missing Data
+
+Real datasets almost always have missing values. Pandas represents them as `NaN`
+(Not a Number).
+
+```python
+# Detect missing values
+df.isnull().sum()          # count of NaN per column
+
+# Strategy 1: Drop rows with any missing value
+df_clean = df.dropna()
+
+# Strategy 2: Drop rows only if specific columns are missing
+df_clean = df.dropna(subset=["age", "income"])
+
+# Strategy 3: Fill with a constant or statistic
+df["age"] = df["age"].fillna(df["age"].median())
+df["city"] = df["city"].fillna("Unknown")
+
+# Strategy 4: Forward-fill (useful for time series)
+df["price"] = df["price"].fillna(method="ffill")
+```
+
+<KeyTakeaway>
+There is no single "correct" way to handle missing data. The right strategy depends
+on why the data is missing and how much is missing. Dropping rows works if only a
+small fraction is affected. Filling with the median is a safe default for numerical
+columns. For ML, you will later learn that some models (like gradient-boosted trees)
+can handle missing values natively, while others (like linear regression) cannot.
+</KeyTakeaway>
+
+### 1.4 GroupBy: Split-Apply-Combine
+
+GroupBy is Pandas' most powerful analytical tool. It splits the data by one or more
+keys, applies an aggregation, and combines the results.
+
+```python
+# Average income by education level
+df.groupby("education")["income"].mean()
+
+# Multiple aggregations at once
+df.groupby("education")["income"].agg(["mean", "median", "count"])
+
+# Group by multiple columns
+df.groupby(["education", "gender"])["income"].mean()
+```
+
+This maps directly to the SQL pattern:
+`SELECT education, AVG(income) FROM table GROUP BY education`.
+
+### 1.5 Creating and Transforming Columns
+
+Feature engineering -- creating new columns from existing ones -- is where domain
+knowledge enters the ML pipeline.
+
+```python
+# Simple arithmetic
+df["income_per_age"] = df["income"] / df["age"]
+
+# Conditional column with np.where
+import numpy as np
+df["is_wealthy"] = np.where(df["income"] > 100_000, 1, 0)
+
+# Apply an arbitrary function
+df["log_income"] = df["income"].apply(np.log1p)
+
+# Binning continuous variables
+df["age_group"] = pd.cut(df["age"], bins=[0, 25, 45, 65, 100],
+                          labels=["young", "mid", "senior", "elder"])
+```
+
+---
+
+## 2. Visualization with Matplotlib and Seaborn
+
+Numbers in a table only get you so far. Visualization reveals patterns, outliers,
+and relationships that summary statistics hide.
+
+### 2.1 Matplotlib Fundamentals
+
+Matplotlib is Python's foundational plotting library. Everything else (Seaborn,
+Pandas plotting) is built on top of it.
+
+```python
+import matplotlib.pyplot as plt
+
+# The basic pattern: create figure -> plot -> label -> show
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.scatter(df["age"], df["income"], alpha=0.3, s=10)
+ax.set_xlabel("Age")
+ax.set_ylabel("Income ($)")
+ax.set_title("Age vs. Income")
+plt.tight_layout()
+plt.savefig("scatter.png", dpi=150)
+plt.show()
+```
+
+**Histograms** reveal the distribution of a single variable:
+
+```python
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.hist(df["income"], bins=50, edgecolor="white")
+ax.set_xlabel("Income ($)")
+ax.set_ylabel("Count")
+ax.set_title("Income Distribution")
+plt.show()
+```
+
+**Subplots** for comparing multiple views side by side:
+
+```python
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+axes[0].hist(df["age"], bins=30, edgecolor="white")
+axes[0].set_title("Age Distribution")
+
+axes[1].hist(df["income"], bins=30, edgecolor="white")
+axes[1].set_title("Income Distribution")
+
+axes[2].scatter(df["age"], df["income"], alpha=0.2, s=5)
+axes[2].set_title("Age vs Income")
+
+plt.tight_layout()
+plt.show()
+```
+
+### 2.2 Seaborn: Statistical Visualization
+
+Seaborn builds on Matplotlib with a higher-level API that is especially good for
+statistical plots and works seamlessly with Pandas DataFrames.
+
+```python
+import seaborn as sns
+
+# Distribution plot
+sns.histplot(data=df, x="income", hue="education", kde=True)
+plt.title("Income Distribution by Education")
+plt.show()
+```
+
+**Correlation heatmap** -- one of the most important plots in the ML exploration
+phase:
+
+```python
+# Select only numeric columns and compute correlations
+numeric_df = df.select_dtypes(include=[np.number])
+corr_matrix = numeric_df.corr()
+
+fig, ax = plt.subplots(figsize=(10, 8))
+sns.heatmap(corr_matrix, annot=True, fmt=".2f", cmap="coolwarm",
+            center=0, ax=ax)
+ax.set_title("Feature Correlation Matrix")
+plt.tight_layout()
+plt.show()
+```
+
+<WhyThisMatters>
+The correlation heatmap is your first line of defense against two common ML
+problems: (1) **multicollinearity** -- when two features are highly correlated,
+they carry redundant information and can destabilize linear models; (2) **feature
+selection** -- features with near-zero correlation to the target are unlikely to be
+useful. A quick heatmap can save you hours of fruitless model tuning.
+</WhyThisMatters>
+
+**Box plots** for spotting outliers:
+
+```python
+fig, ax = plt.subplots(figsize=(10, 5))
+sns.boxplot(data=df, x="education", y="income", ax=ax)
+ax.set_title("Income by Education Level")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+```
+
+**Pair plot** for a quick overview of all pairwise relationships:
+
+```python
+# Warning: slow for datasets with many columns -- select a subset
+sns.pairplot(df[["age", "income", "education_years", "hours_per_week"]],
+             diag_kind="kde", plot_kws={"alpha": 0.3, "s": 10})
+plt.show()
+```
+
+<MathNote>
+The Pearson correlation coefficient between variables $X$ and $Y$ is:
+
+$$r_{XY} = \frac{\sum_{i=1}^n (X_i - \bar{X})(Y_i - \bar{Y})}{\sqrt{\sum_{i=1}^n (X_i - \bar{X})^2} \sqrt{\sum_{i=1}^n (Y_i - \bar{Y})^2}}$$
+
+It ranges from $-1$ (perfect negative linear relationship) to $+1$ (perfect
+positive linear relationship). A value of $0$ means no **linear** relationship --
+there could still be a nonlinear one, which is why you should always visualize.
+</MathNote>
+
+---
+
+## 3. The ML Data Pipeline
+
+With Pandas for data wrangling and Matplotlib/Seaborn for visualization, you now
+have the tools for every step of the standard ML data pipeline. Let us walk through
+it end to end.
+
+### Step 1: Load
+
+```python
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+df = pd.read_csv("housing.csv")
+print(f"Dataset shape: {df.shape}")
+print(f"Columns: {list(df.columns)}")
+```
+
+### Step 2: Explore
+
+```python
+# Statistical summary
+df.describe()
+
+# Check data types and missing values
+df.info()
+
+# Value counts for categorical columns
+df["ocean_proximity"].value_counts()
+```
+
+### Step 3: Clean
+
+```python
+# Handle missing values
+print(df.isnull().sum())
+
+# Fill numerical columns with median
+for col in df.select_dtypes(include=[np.number]).columns:
+    if df[col].isnull().any():
+        df[col] = df[col].fillna(df[col].median())
+
+# Encode categorical variables (one-hot encoding)
+df = pd.get_dummies(df, columns=["ocean_proximity"], drop_first=True)
+
+# Remove obvious outliers (domain-specific decision)
+df = df[df["median_house_value"] < 500_001]
+```
+
+### Step 4: Visualize
+
+```python
+# Target distribution
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+axes[0].hist(df["median_house_value"], bins=50, edgecolor="white")
+axes[0].set_title("Target: Median House Value")
+axes[0].set_xlabel("Value ($)")
+
+# Correlation with target
+correlations = df.corr()["median_house_value"].sort_values(ascending=False)
+axes[1].barh(correlations.index[1:8], correlations.values[1:8])
+axes[1].set_title("Top Feature Correlations with Target")
+
+plt.tight_layout()
+plt.show()
+
+# Geographic scatter plot (if lat/long available)
+plt.figure(figsize=(10, 7))
+plt.scatter(df["longitude"], df["latitude"],
+            c=df["median_house_value"], cmap="viridis",
+            alpha=0.4, s=df["population"] / 100)
+plt.colorbar(label="Median House Value ($)")
+plt.xlabel("Longitude")
+plt.ylabel("Latitude")
+plt.title("California Housing Prices (size = population)")
+plt.show()
+```
+
+### Step 5: Prepare for Modeling
+
+```python
+# Separate features (X) and target (y)
+target_col = "median_house_value"
+feature_cols = [c for c in df.columns if c != target_col]
+
+X = df[feature_cols].values   # Convert to NumPy array
+y = df[target_col].values
+
+# Feature scaling (standardization): zero mean, unit variance
+X_mean = X.mean(axis=0)
+X_std  = X.std(axis=0)
+X_scaled = (X - X_mean) / X_std    # broadcasting in action!
+
+print(f"X shape: {X_scaled.shape}")
+print(f"y shape: {y.shape}")
+print(f"Feature means after scaling: {X_scaled.mean(axis=0).round(6)}")
+# Should be approximately [0, 0, 0, ...]
+```
+
+<KeyTakeaway>
+The ML data pipeline is: **Load -> Explore -> Clean -> Visualize -> Prepare**.
+You do not jump to modeling until you understand your data. Visualization is not
+a nice-to-have -- it is an essential debugging and understanding tool. The final
+step converts your cleaned DataFrame into NumPy arrays suitable for ML algorithms,
+with feature scaling applied.
+</KeyTakeaway>
+
+<MathNote>
+**Standardization** (also called Z-score normalization) transforms each feature
+$X_j$ so that it has zero mean and unit variance:
+
+$$X_j^{\text{scaled}} = \frac{X_j - \mu_j}{\sigma_j}$$
+
+where $\mu_j$ is the column mean and $\sigma_j$ is the column standard deviation.
+This is critical for algorithms like linear regression, SVMs, and neural networks
+that are sensitive to feature scales. A feature ranging from 0 to 1,000,000 would
+dominate one ranging from 0 to 1.
+</MathNote>
+
+---
+
+## 4. Common Pandas Patterns You Will Use Repeatedly
+
+### Merging datasets
+
+```python
+# When features come from multiple sources
+users = pd.read_csv("users.csv")          # user_id, age, gender
+purchases = pd.read_csv("purchases.csv")  # user_id, item, amount
+
+# Inner join (only rows present in both)
+combined = users.merge(purchases, on="user_id", how="inner")
+
+# Left join (keep all users, fill NaN for users without purchases)
+combined = users.merge(purchases, on="user_id", how="left")
+```
+
+### Pivot tables
+
+```python
+# Average purchase amount by age group and product category
+pivot = df.pivot_table(values="amount", index="age_group",
+                       columns="category", aggfunc="mean")
+```
+
+### Value counts and unique values
+
+```python
+df["category"].value_counts()        # frequency of each value
+df["category"].nunique()             # number of unique values
+```
+
+### Sampling
+
+```python
+# Random sample for quick exploration of large datasets
+sample = df.sample(n=1000, random_state=42)
+
+# Stratified-like sampling: sample proportionally from each group
+sample = df.groupby("label").apply(
+    lambda x: x.sample(frac=0.1, random_state=42)
+).reset_index(drop=True)
+```
+
+<CommonMistake>
+A common trap is performing feature scaling (standardization) on the entire dataset
+*before* splitting into train and test sets. This causes **data leakage** -- your
+test set statistics leak into the training process. Always split first, then compute
+scaling parameters from the training set only, and apply those same parameters to
+the test set. We will revisit this important concept when we cover train/test splits
+in Module 1.
+</CommonMistake>
+
+---
+
+## 5. Choosing the Right Plot
+
+| Question you want to answer | Plot type | Library call |
+|---|---|---|
+| What is the distribution of a single variable? | Histogram | `plt.hist()` or `sns.histplot()` |
+| How are two continuous variables related? | Scatter plot | `plt.scatter()` or `sns.scatterplot()` |
+| How does a variable differ across groups? | Box plot | `sns.boxplot()` |
+| What is the correlation structure? | Heatmap | `sns.heatmap(df.corr())` |
+| How do all features relate pairwise? | Pair plot | `sns.pairplot()` |
+| What is the trend over time? | Line plot | `plt.plot()` or `sns.lineplot()` |
+| What are the category frequencies? | Bar plot | `sns.countplot()` or `plt.bar()` |
+
+---
+
+## Hands-On Lab
+
+In the accompanying lab (`labs/lesson-0.2/`) you will work through a complete data
+pipeline exercise:
+
+1. **Load and explore** a real-world dataset (the California Housing dataset or a
+   provided CSV). Use `.info()`, `.describe()`, and `.value_counts()` to understand
+   what you are working with.
+
+2. **Clean the data** -- Handle missing values, remove or cap outliers, and encode
+   categorical features. Justify your choices.
+
+3. **Visualize** -- Create at least four plots: a histogram of the target variable,
+   a correlation heatmap, a scatter plot of the two most correlated features, and a
+   box plot showing the target variable across a categorical grouping.
+
+4. **Prepare for modeling** -- Split features from the target, apply standardization
+   using only training statistics, and output clean NumPy arrays ready for a model.
+
+Open `labs/lesson-0.2/starter.py` to get started. The starter code provides the
+dataset loading and skeleton functions with docstrings and assertions.

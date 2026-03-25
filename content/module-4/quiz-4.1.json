@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "Why is text considered harder for machine learning models than images?",
+      "options": [
+        "Text files are larger than image files",
+        "Text is a variable-length sequence of discrete symbols with no natural numeric ordering",
+        "Text requires GPUs while images do not",
+        "Text data is always unstructured while images are structured"
+      ],
+      "correct": "B",
+      "explanation": "Text is challenging because words are discrete symbols (not continuous values like pixel intensities), sentences vary in length, vocabularies are huge, and the same word can have different meanings in different contexts. Images are already numeric arrays of fixed dimensions."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "What is the main limitation of the Bag of Words representation?",
+      "options": [
+        "It cannot handle documents with more than 1000 words",
+        "It requires a GPU to compute",
+        "It ignores word order, so 'dog bites man' and 'man bites dog' have identical representations",
+        "It only works with English text"
+      ],
+      "correct": "C",
+      "explanation": "Bag of Words counts word occurrences without regard to order or position. This means sentences with completely different meanings but the same words ('dog bites man' vs 'man bites dog') produce identical vectors."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "In TF-IDF, what happens to a word that appears in every document in the corpus?",
+      "options": [
+        "Its TF-IDF score is maximized because it has high term frequency",
+        "Its IDF component becomes log(1) = 0, zeroing out the entire TF-IDF score",
+        "It is removed from the vocabulary automatically",
+        "Its score is set to 1.0 as a normalization constant"
+      ],
+      "correct": "B",
+      "explanation": "IDF = log(N / df) where df is the number of documents containing the term. If the term appears in all N documents, IDF = log(N/N) = log(1) = 0. Multiplying TF by 0 gives a TF-IDF score of 0, effectively removing the word's contribution."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What is the key idea behind Word2Vec's Skip-gram model?",
+      "options": [
+        "Words that look similar (share letters) should have similar embeddings",
+        "Given a center word, predict the surrounding context words",
+        "Count global co-occurrence statistics across the entire corpus",
+        "Classify documents into predefined categories using word counts"
+      ],
+      "correct": "B",
+      "explanation": "Skip-gram trains a shallow neural network to predict context words given a center word. By optimizing this objective, the model learns embeddings where words appearing in similar contexts end up with similar vectors."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "Why is negative sampling used in Word2Vec instead of the full softmax?",
+      "options": [
+        "It produces better embeddings than the full softmax",
+        "The full softmax requires summing over the entire vocabulary for every training example, which is computationally prohibitive",
+        "Negative sampling is required by the Skip-gram architecture",
+        "The full softmax cannot handle out-of-vocabulary words"
+      ],
+      "correct": "B",
+      "explanation": "The full softmax denominator requires computing exp(v'_w . v_c) for every word in the vocabulary (often 100K+ words) for every single training step. Negative sampling approximates this by only updating the target word and a small random sample of 'negative' words, making training tractable."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "The analogy 'king - man + woman ≈ queen' works in embedding space because:",
+      "options": [
+        "The model was explicitly trained on analogy tasks",
+        "The embedding space encodes relationships as consistent directions, so the 'royalty' direction (king - man) can be added to 'woman' to reach 'queen'",
+        "Queen is the closest word to king in the vocabulary",
+        "The dot product of king and queen vectors equals exactly 1.0"
+      ],
+      "correct": "B",
+      "explanation": "Word embeddings learn to encode semantic relationships as directions in the vector space. The direction from 'man' to 'king' captures the concept of male royalty, and this same direction from 'woman' points toward 'queen'. This emergent property arises from the distributional patterns in training data."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "What is the fundamental difference between GloVe and Word2Vec?",
+      "options": [
+        "GloVe produces sparse vectors while Word2Vec produces dense vectors",
+        "GloVe uses global word co-occurrence statistics while Word2Vec learns from local context windows",
+        "GloVe requires labeled data while Word2Vec is unsupervised",
+        "GloVe can only be used for English while Word2Vec works for any language"
+      ],
+      "correct": "B",
+      "explanation": "Word2Vec learns embeddings by predicting context words from local sliding windows over the text. GloVe first constructs a global word-word co-occurrence matrix from the entire corpus, then learns embeddings by factorizing this matrix. Both produce dense vectors of similar quality."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "What is the main limitation shared by both Word2Vec and GloVe embeddings?",
+      "options": [
+        "They cannot represent words with more than 10 characters",
+        "They assign a single fixed vector to each word regardless of context, so polysemous words like 'bank' get one representation for all meanings",
+        "They require at least 1 billion words of training data to be useful",
+        "They can only capture syntactic relationships, not semantic ones"
+      ],
+      "correct": "B",
+      "explanation": "Both Word2Vec and GloVe produce static embeddings -- one vector per word type. The word 'bank' gets the same embedding whether it refers to a financial institution or a river bank. This inability to handle polysemy is a fundamental limitation that contextual models like BERT and GPT address."
+    }
+  ]
+}

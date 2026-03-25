@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "What is the purpose of the 1/2 factor in the MSE cost function J(theta) = (1/2m) * sum((h(x) - y)^2)?",
+      "options": [
+        "It ensures the cost is always positive",
+        "It makes the derivative cleaner by canceling with the power rule's factor of 2",
+        "It normalizes the cost to be between 0 and 1",
+        "It prevents gradient descent from diverging"
+      ],
+      "correct": "B",
+      "explanation": "The 1/2 is purely a mathematical convenience. When you take the derivative of (h - y)^2, the power rule brings down a factor of 2. The 1/2 cancels this, giving a cleaner gradient expression. It does not change where the minimum occurs."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "If the learning rate alpha is too large during gradient descent, what happens?",
+      "options": [
+        "The algorithm converges more quickly to the optimal solution",
+        "The algorithm converges to a local minimum instead of the global minimum",
+        "The cost function may oscillate or diverge instead of decreasing",
+        "The algorithm finds the normal equation solution"
+      ],
+      "correct": "C",
+      "explanation": "When the learning rate is too large, gradient descent overshoots the minimum. Each step jumps past the optimal point, potentially with increasing magnitude, causing the cost to oscillate or blow up to infinity."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "In the normal equation theta* = (X^T X)^(-1) X^T y, what is the main disadvantage compared to gradient descent?",
+      "options": [
+        "It requires choosing a learning rate",
+        "It is computationally expensive for large numbers of features due to matrix inversion",
+        "It only works for classification problems",
+        "It cannot find the global minimum"
+      ],
+      "correct": "B",
+      "explanation": "Matrix inversion has O(n^3) time complexity where n is the number of features. For datasets with thousands or millions of features, this becomes impractical. Gradient descent scales much better to high-dimensional problems."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "Why is feature scaling important for gradient descent?",
+      "options": [
+        "It ensures all features are positive",
+        "It prevents the model from overfitting",
+        "It makes the cost surface more symmetric, allowing faster and more direct convergence",
+        "It is required for the normal equation to work"
+      ],
+      "correct": "C",
+      "explanation": "Without feature scaling, features with large ranges dominate the gradient, creating an elongated cost surface. Gradient descent zigzags along the narrow valley instead of heading directly toward the minimum. Scaling makes the contours more circular, enabling faster convergence."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "Polynomial regression with degree d=3 and one feature x creates which feature set?",
+      "options": [
+        "[x, x^2, x^3]",
+        "[1, x, x^2, x^3]",
+        "[x^3] only",
+        "[1, x, 2x, 3x]"
+      ],
+      "correct": "B",
+      "explanation": "PolynomialFeatures(degree=3) creates all terms from degree 0 (the constant 1) through degree 3: [1, x, x^2, x^3]. The bias term (1) is included by default. The model is still linear in its parameters theta, even though it is a polynomial in x."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "In Ridge regression, what does increasing the regularization parameter lambda do?",
+      "options": [
+        "Increases model complexity and risk of overfitting",
+        "Shrinks the weights toward zero, reducing model complexity",
+        "Removes features with low variance",
+        "Increases the learning rate"
+      ],
+      "correct": "B",
+      "explanation": "Ridge regression adds lambda * sum(theta_j^2) to the cost function. Increasing lambda penalizes large weights more heavily, forcing the model to use smaller parameter values. This reduces model complexity and can help prevent overfitting, at the potential cost of increased bias."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "When fitting a StandardScaler for feature preprocessing, you should:",
+      "options": [
+        "Fit on the entire dataset before splitting into train/test",
+        "Fit on the test set and transform the training set",
+        "Fit on the training set only, then transform both training and test sets",
+        "Fit separately on training and test sets using their own statistics"
+      ],
+      "correct": "C",
+      "explanation": "The scaler must be fit on training data only. Using test set statistics (directly or by fitting on the full dataset) constitutes data leakage — information from the test set influences preprocessing, producing optimistically biased performance estimates."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "What does it mean that polynomial regression is 'linear in the parameters'?",
+      "options": [
+        "The features must have a linear relationship with each other",
+        "The hypothesis is a straight line",
+        "The prediction is a weighted sum of the (possibly transformed) features — linear in theta",
+        "The cost function is a linear function of theta"
+      ],
+      "correct": "C",
+      "explanation": "Even though polynomial regression uses nonlinear features like x^2 and x^3, the prediction is still a linear combination (weighted sum) of those features: h = theta_0 + theta_1*x + theta_2*x^2 + ... This means the same linear algebra machinery (normal equation, gradient descent) applies. 'Linear' refers to linearity in the parameters theta, not in the original feature x."
+    }
+  ]
+}

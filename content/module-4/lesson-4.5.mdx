@@ -1,0 +1,491 @@
+---
+module: 4
+lesson: 5
+title: "Embeddings, RAG & Building with LLMs"
+description: "Learn how to build real AI applications using sentence embeddings, vector databases, Retrieval-Augmented Generation (RAG), prompt engineering from a technical perspective, and agent architectures with tool use."
+prerequisites: ["4.4"]
+estimatedMinutes: 55
+---
+
+# Embeddings, RAG & Building with LLMs
+
+You now understand the machinery inside large language models. This lesson shifts from *how LLMs work* to *how to build with them*. We cover the practical building blocks of modern AI applications: sentence embeddings, vector databases, Retrieval-Augmented Generation (RAG), prompt engineering as a technical discipline, and the emerging world of AI agents.
+
+<WhyThisMatters>
+Most AI engineers do not train models -- they build applications on top of them. Understanding embeddings, RAG, and agent architectures is what separates someone who can call an API from someone who can design robust, production-quality AI systems.
+</WhyThisMatters>
+
+## From Word Embeddings to Sentence Embeddings
+
+In Lesson 4.1, we saw Word2Vec and GloVe -- embeddings for individual words. But real applications need to represent entire sentences, paragraphs, or documents as single vectors.
+
+### Why Not Just Average Word Embeddings?
+
+Averaging word embeddings is a simple baseline, but it fails in important ways:
+- "The food was not good" and "The food was good" have nearly identical averages ("not" barely shifts the vector).
+- Long documents dilute the signal from the most important sentences.
+- Word order and compositionality are completely lost.
+
+### Modern Sentence Embeddings
+
+Modern embedding models are **trained transformers** that produce a single vector for an entire text span. They are trained with contrastive objectives: make similar texts have similar embeddings and dissimilar texts have dissimilar embeddings.
+
+```python
+# Using a sentence embedding model
+from sentence_transformers import SentenceTransformer
+import numpy as np
+
+model = SentenceTransformer('all-MiniLM-L6-v2')  # 384-dim embeddings
+
+sentences = [
+    "How do I return a product?",
+    "What is your refund policy?",
+    "Tell me about machine learning",
+    "I want to send this item back",
+]
+
+embeddings = model.encode(sentences)
+print(f"Embedding shape: {embeddings.shape}")  # (4, 384)
+
+# Compute similarity matrix
+from sklearn.metrics.pairwise import cosine_similarity
+sim_matrix = cosine_similarity(embeddings)
+
+for i in range(len(sentences)):
+    for j in range(i+1, len(sentences)):
+        print(f"Sim('{sentences[i][:30]}...', '{sentences[j][:30]}...')"
+              f" = {sim_matrix[i][j]:.3f}")
+```
+
+The sentences about returns/refunds will have high similarity (~0.7-0.8), while the machine learning sentence will be far from the others (~0.1-0.2).
+
+### Embedding Model Choices
+
+| Model | Dimensions | Speed | Quality | Use Case |
+|-------|-----------|-------|---------|----------|
+| all-MiniLM-L6-v2 | 384 | Fast | Good | Prototyping, low-latency |
+| text-embedding-3-small (OpenAI) | 1536 | API call | Very good | Production, general purpose |
+| text-embedding-3-large (OpenAI) | 3072 | API call | Excellent | High-quality retrieval |
+| voyage-3 (Voyage AI) | 1024 | API call | Excellent | Code + text |
+| BGE-large-en-v1.5 | 1024 | Medium | Very good | Open-source, self-hosted |
+
+<CommonMistake>
+Do not mix embedding models in a single vector database. Embeddings from different models live in completely different vector spaces -- a vector from OpenAI's model and a vector from MiniLM cannot be meaningfully compared. If you switch embedding models, you must re-embed all your documents.
+</CommonMistake>
+
+## Vector Databases
+
+Once you have embeddings, you need a way to store them and perform fast similarity search. A **vector database** is optimized for exactly this: finding the $k$ nearest neighbors to a query vector among millions or billions of stored vectors.
+
+### How Vector Search Works
+
+Naive nearest-neighbor search computes cosine similarity against every stored vector: $O(n)$ for $n$ documents. Vector databases use **approximate nearest neighbor (ANN)** algorithms to make this sub-linear:
+
+- **HNSW (Hierarchical Navigable Small World)**: Builds a graph where vectors are nodes and edges connect similar vectors. Search navigates the graph, starting from a random entry point and greedily moving toward the query. $O(\log n)$ search time.
+- **IVF (Inverted File Index)**: Clusters vectors, then only searches the nearest clusters. Faster but less accurate.
+- **Product Quantization**: Compresses vectors to reduce memory, enabling billion-scale search.
+
+### Vector Database Options
+
+```python
+# Example using ChromaDB (embedded, great for prototyping)
+import chromadb
+
+client = chromadb.Client()
+collection = client.create_collection("my_docs")
+
+# Add documents -- ChromaDB handles embedding automatically
+collection.add(
+    documents=[
+        "Python is a programming language used in data science",
+        "Machine learning requires large datasets for training",
+        "The Eiffel Tower is located in Paris, France",
+        "Neural networks are inspired by biological brains",
+    ],
+    ids=["doc1", "doc2", "doc3", "doc4"],
+)
+
+# Query
+results = collection.query(
+    query_texts=["What programming languages are used for AI?"],
+    n_results=2,
+)
+print(results["documents"])
+# [['Python is a programming language used in data science',
+#   'Neural networks are inspired by biological brains']]
+```
+
+For production systems, common choices include:
+- **Pinecone**: Fully managed, scales to billions of vectors
+- **Weaviate**: Open-source, supports hybrid search (vector + keyword)
+- **Qdrant**: Open-source, high performance, Rust-based
+- **pgvector**: PostgreSQL extension (use your existing database)
+- **FAISS**: Facebook's library for similarity search (not a database, but a building block)
+
+## Retrieval-Augmented Generation (RAG)
+
+RAG is the most important design pattern for building LLM applications that need access to specific, up-to-date, or proprietary knowledge. The idea is simple:
+
+1. **Retrieve** relevant documents based on the user's query.
+2. **Augment** the LLM's prompt with those documents.
+3. **Generate** a response grounded in the retrieved information.
+
+### Why RAG?
+
+LLMs have a knowledge cutoff date and can hallucinate facts. RAG addresses both:
+- **Grounding**: The model answers based on actual documents, not its parametric memory.
+- **Currency**: Update the document store without retraining the model.
+- **Traceability**: You can cite the exact documents the answer is based on.
+- **Privacy**: Keep proprietary data in your vector store, not in the LLM's weights.
+
+### RAG Pipeline: End to End
+
+```python
+# Complete RAG pipeline example
+from sentence_transformers import SentenceTransformer
+import numpy as np
+
+class SimpleRAG:
+    def __init__(self, embedding_model_name='all-MiniLM-L6-v2'):
+        self.embed_model = SentenceTransformer(embedding_model_name)
+        self.documents = []
+        self.embeddings = None
+
+    def add_documents(self, docs):
+        """Index documents by computing and storing embeddings."""
+        self.documents.extend(docs)
+        self.embeddings = self.embed_model.encode(self.documents)
+
+    def retrieve(self, query, top_k=3):
+        """Find the most relevant documents for a query."""
+        query_emb = self.embed_model.encode([query])
+        # Cosine similarity
+        similarities = np.dot(self.embeddings, query_emb.T).squeeze()
+        top_indices = np.argsort(similarities)[::-1][:top_k]
+        return [(self.documents[i], similarities[i]) for i in top_indices]
+
+    def generate_prompt(self, query, top_k=3):
+        """Build an augmented prompt with retrieved context."""
+        retrieved = self.retrieve(query, top_k)
+
+        context = "\n\n".join([
+            f"[Document {i+1} (relevance: {score:.3f})]\n{doc}"
+            for i, (doc, score) in enumerate(retrieved)
+        ])
+
+        prompt = f"""Answer the question based on the provided context.
+If the context does not contain enough information, say so.
+
+Context:
+{context}
+
+Question: {query}
+
+Answer:"""
+        return prompt
+
+# Usage
+rag = SimpleRAG()
+rag.add_documents([
+    "Our return policy allows returns within 30 days of purchase.",
+    "Refunds are processed within 5-7 business days.",
+    "Items must be in original packaging for returns.",
+    "Digital products are non-refundable.",
+    "Contact support@example.com for return authorization.",
+])
+
+prompt = rag.generate_prompt("How long do I have to return an item?")
+print(prompt)
+# This prompt would be sent to an LLM (GPT-4, Claude, etc.)
+```
+
+### Chunking Strategies
+
+Real documents are too long to embed and retrieve as single units. You need to split them into **chunks**:
+
+```python
+def chunk_text(text, chunk_size=500, overlap=50):
+    """Split text into overlapping chunks."""
+    words = text.split()
+    chunks = []
+    start = 0
+    while start < len(words):
+        end = start + chunk_size
+        chunk = " ".join(words[start:end])
+        chunks.append(chunk)
+        start = end - overlap  # Overlap to avoid cutting context
+    return chunks
+
+# Better: use semantic boundaries
+def chunk_by_paragraphs(text, max_chunk_size=1000):
+    """Split on paragraph boundaries, respecting size limits."""
+    paragraphs = text.split("\n\n")
+    chunks = []
+    current_chunk = ""
+
+    for para in paragraphs:
+        if len(current_chunk) + len(para) > max_chunk_size and current_chunk:
+            chunks.append(current_chunk.strip())
+            current_chunk = para
+        else:
+            current_chunk += "\n\n" + para
+
+    if current_chunk.strip():
+        chunks.append(current_chunk.strip())
+    return chunks
+```
+
+<KeyTakeaway>
+Chunking is one of the most impactful decisions in a RAG system. Chunks too small lose context; chunks too large dilute the relevant information with noise. A good starting point is 200-500 tokens with 10-20% overlap. Always test retrieval quality with real queries before optimizing the generation side.
+</KeyTakeaway>
+
+### Advanced RAG Techniques
+
+**Hybrid search**: Combine vector similarity with keyword search (BM25) for better recall.
+
+```python
+def hybrid_search(query, documents, embeddings, embed_model, alpha=0.5):
+    """Combine semantic and keyword search."""
+    # Semantic scores
+    query_emb = embed_model.encode([query])
+    semantic_scores = np.dot(embeddings, query_emb.T).squeeze()
+
+    # Simple keyword matching (in production, use BM25)
+    query_terms = set(query.lower().split())
+    keyword_scores = np.array([
+        len(query_terms.intersection(doc.lower().split())) / len(query_terms)
+        for doc in documents
+    ])
+
+    # Weighted combination
+    combined = alpha * semantic_scores + (1 - alpha) * keyword_scores
+    return np.argsort(combined)[::-1]
+```
+
+**Re-ranking**: Use a cross-encoder model to re-score the top candidates from the initial retrieval. Cross-encoders are more accurate than bi-encoders but too slow for the initial search.
+
+**Query expansion**: Rephrase or expand the user's query to improve retrieval. An LLM can generate multiple query variants, and you retrieve documents for all of them.
+
+**Metadata filtering**: Attach metadata (date, author, category) to chunks and filter before vector search. "What changed in the 2024 policy?" should only search documents from 2024.
+
+## Prompt Engineering: A Technical Perspective
+
+Prompt engineering is not just writing good instructions -- it is about understanding how the model processes your prompt at a mechanical level.
+
+### System Prompts, Few-Shot Examples, and Chain of Thought
+
+```python
+# Structured prompt for a classification task
+def build_classification_prompt(text, categories):
+    """Few-shot classification prompt."""
+    prompt = f"""You are a text classifier. Classify the given text into
+exactly one of these categories: {', '.join(categories)}.
+
+Examples:
+Text: "The stock market crashed today"
+Category: Finance
+
+Text: "The new iPhone has an amazing camera"
+Category: Technology
+
+Text: "Scientists discovered a new species in the Amazon"
+Category: Science
+
+Text: "{text}"
+Category:"""
+    return prompt
+
+# Chain of thought for complex reasoning
+def build_cot_prompt(question):
+    """Encourage step-by-step reasoning."""
+    return f"""Answer the following question. Think step by step,
+showing your reasoning before giving the final answer.
+
+Question: {question}
+
+Let me think through this step by step:"""
+```
+
+### Why Prompting Techniques Work (Technically)
+
+- **Few-shot examples** work because transformers are powerful in-context learners. The attention mechanism can identify patterns in the examples and apply them to new inputs -- without any weight updates. This is sometimes called "meta-learning."
+
+- **Chain of thought** works because it forces the model to generate intermediate reasoning tokens. Each generated token becomes context for the next, so the model effectively gets to "think out loud." Without CoT, the model must jump directly from question to answer in a single forward pass.
+
+<MathNote>
+There is a theoretical reason why chain-of-thought helps: a transformer with $L$ layers and $d$-dimensional hidden states can only compute functions in the complexity class $\text{TC}^0$ (constant-depth threshold circuits) in a single forward pass. By generating intermediate tokens, the model effectively increases its "depth" -- each generated token adds another $L$ layers of computation. This lets it solve problems that require sequential reasoning steps.
+</MathNote>
+
+- **System prompts** are simply prepended to the conversation. They get cached in the KV cache and influence every subsequent attention computation. A well-designed system prompt biases the model's attention patterns throughout the entire conversation.
+
+## Agents and Tool Use
+
+An **agent** is an LLM that can take actions in the world, not just generate text. The basic loop:
+
+1. The LLM receives a user query plus a description of available tools.
+2. The LLM decides whether to use a tool and generates a tool call (function name + arguments).
+3. The system executes the tool and returns the result.
+4. The LLM incorporates the result and either calls another tool or generates a final response.
+
+```python
+# Simplified agent loop
+import json
+
+TOOLS = {
+    "search_web": {
+        "description": "Search the web for current information",
+        "parameters": {"query": "string"},
+    },
+    "calculate": {
+        "description": "Evaluate a mathematical expression",
+        "parameters": {"expression": "string"},
+    },
+    "get_weather": {
+        "description": "Get current weather for a location",
+        "parameters": {"location": "string"},
+    },
+}
+
+def agent_loop(user_query, llm_call, tool_executor, max_steps=5):
+    """
+    Simple ReAct-style agent loop.
+
+    llm_call: function that takes messages and returns a response
+    tool_executor: function that executes a tool call
+    """
+    messages = [
+        {"role": "system", "content": f"""You are a helpful assistant with
+access to these tools: {json.dumps(TOOLS, indent=2)}
+
+To use a tool, respond with:
+TOOL: tool_name
+ARGS: {{"param": "value"}}
+
+When you have enough information to answer, respond normally."""},
+        {"role": "user", "content": user_query},
+    ]
+
+    for step in range(max_steps):
+        response = llm_call(messages)
+
+        if "TOOL:" in response:
+            # Parse and execute tool call
+            tool_name, args = parse_tool_call(response)
+            result = tool_executor(tool_name, args)
+            messages.append({"role": "assistant", "content": response})
+            messages.append({"role": "user",
+                             "content": f"Tool result: {result}"})
+        else:
+            # Final answer
+            return response
+
+    return "Max steps reached without a final answer."
+```
+
+### Agent Architectures in Production
+
+Real agent systems are more sophisticated:
+
+**ReAct (Reason + Act)**: The model alternates between reasoning ("I need to find the current stock price") and acting (calling a tool). The reasoning traces help the model plan multi-step tasks.
+
+**Multi-agent systems**: Multiple specialized agents collaborate. A "router" agent delegates to a "search agent", "code agent", or "analysis agent" based on the query.
+
+**Planning agents**: The model creates an explicit plan before executing, then follows the plan step by step, revising if a step fails.
+
+<CommonMistake>
+The biggest mistake in agent design is giving the agent too many tools or too much autonomy without guardrails. Every tool is a potential failure point. Start with the minimum set of tools needed, add strong input validation on tool arguments, implement timeout and retry logic, and always have a fallback path when tools fail.
+</CommonMistake>
+
+## Architecture of Real AI Applications
+
+Let us put everything together. A production AI application (like a customer support chatbot) typically has this architecture:
+
+```
+User Message
+     |
+     v
+[Input Processing]
+  - Moderation / safety check
+  - Language detection
+  - Intent classification
+     |
+     v
+[Retrieval Layer]
+  - Embed the query
+  - Search vector DB for relevant docs
+  - Optionally: hybrid search, metadata filtering
+  - Re-rank top candidates
+     |
+     v
+[Prompt Construction]
+  - System prompt (persona, rules, formatting)
+  - Retrieved context (RAG)
+  - Conversation history
+  - User message
+     |
+     v
+[LLM Generation]
+  - Model selection (fast vs. capable)
+  - Appropriate sampling parameters
+  - Streaming response
+     |
+     v
+[Output Processing]
+  - Citation extraction
+  - Hallucination detection
+  - Response formatting
+  - Logging for evaluation
+     |
+     v
+User Response
+```
+
+### Key Design Decisions
+
+1. **Model selection**: Use smaller/faster models for simple tasks (classification, routing) and larger models for complex generation. This saves cost and latency.
+
+2. **Caching**: Cache embeddings for frequent queries. Cache LLM responses for identical prompts (with appropriate TTL).
+
+3. **Evaluation**: Build an evaluation pipeline from day one. Collect human feedback, run automated quality checks, and track metrics over time.
+
+4. **Guardrails**: Implement input and output filtering. Check for prompt injection attacks. Validate that responses cite actual retrieved documents.
+
+```python
+# Simple hallucination check
+def check_grounding(response, context_docs):
+    """Basic check that key claims in the response appear in context."""
+    response_sentences = response.split('. ')
+    grounded_count = 0
+    total_claims = 0
+
+    for sentence in response_sentences:
+        if len(sentence.split()) < 5:
+            continue  # Skip short fragments
+        total_claims += 1
+        # Check if any context doc supports this sentence
+        for doc in context_docs:
+            if any(phrase in doc.lower()
+                   for phrase in extract_key_phrases(sentence)):
+                grounded_count += 1
+                break
+
+    if total_claims == 0:
+        return 1.0
+    return grounded_count / total_claims
+```
+
+<KeyTakeaway>
+Building with LLMs is an engineering discipline, not just prompt writing. A production system combines embedding models, vector databases, retrieval pipelines, prompt construction, model selection, output validation, and monitoring. RAG is the most important pattern because it grounds LLM responses in actual data, reducing hallucination and enabling access to current or private information without retraining.
+</KeyTakeaway>
+
+## Summary
+
+- **Sentence embeddings** map entire text spans to dense vectors, enabling semantic similarity search at scale.
+- **Vector databases** (Pinecone, Weaviate, ChromaDB, pgvector) store embeddings and perform fast approximate nearest-neighbor search.
+- **RAG** (Retrieve, Augment, Generate) grounds LLM responses in retrieved documents, reducing hallucination and enabling access to current/private data.
+- **Chunking** strategy (size, overlap, boundary type) is one of the most impactful decisions in a RAG system.
+- **Prompt engineering** works because of in-context learning (few-shot), extended computation (chain-of-thought), and attention bias (system prompts).
+- **Agents** extend LLMs with tool use, enabling them to take actions like searching the web, executing code, or calling APIs.
+- Production AI applications are **systems**, not just models -- they combine retrieval, generation, validation, and monitoring in a layered architecture.
+
+This concludes Module 4. You now understand the full stack of modern NLP: from representing text as numbers (Lesson 4.1), through sequence models (4.2) and transformers (4.3), to how LLMs are trained (4.4) and how to build with them (4.5). The lab exercises will give you hands-on experience with each of these layers.

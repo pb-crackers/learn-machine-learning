@@ -1,0 +1,431 @@
+---
+module: 5
+lesson: 1
+title: "Phase 1: Data Pipeline & Exploration"
+description: "Load, explore, clean, and prepare a real-world dataset"
+prerequisites: ["4.5"]
+estimatedMinutes: 90
+---
+
+# Phase 1: Data Pipeline & Exploration
+
+Welcome to the capstone project. Over the next three phases, you will build an end-to-end
+machine learning system — from raw data to a deployed prediction API. This first phase focuses
+on the foundation that every successful ML project rests on: understanding and preparing your data.
+
+<WhyThisMatters>
+In industry, data scientists spend 60-80% of their time on data preparation. A model trained on
+poorly understood or badly cleaned data will fail no matter how sophisticated the architecture.
+This phase forces you to build the habits that separate hobbyists from professionals.
+</WhyThisMatters>
+
+## Choosing Your Dataset
+
+Pick a dataset that interests you and meets these criteria:
+
+- **At least 1,000 rows** — enough to train meaningful models but small enough to iterate quickly.
+- **A mix of numeric and categorical features** — so you practice different preprocessing strategies.
+- **A clear prediction target** — either a continuous value (regression) or a discrete label (classification).
+
+### Recommended Datasets
+
+| Dataset | Task | Source | Rows | Features |
+|---------|------|--------|------|----------|
+| California Housing | Regression | `sklearn.datasets` | 20,640 | 8 numeric |
+| Heart Disease (UCI) | Classification | UCI ML Repository | 303 | 13 mixed |
+| Spaceship Titanic | Classification | Kaggle | 8,693 | 13 mixed |
+| Online Shoppers Intention | Classification | UCI ML Repository | 12,330 | 18 mixed |
+| Wine Quality | Regression/Classification | UCI ML Repository | 6,497 | 12 numeric |
+| Bank Marketing | Classification | UCI ML Repository | 45,211 | 17 mixed |
+
+You are free to choose any dataset you like. If you are unsure, start with **Heart Disease** (small,
+mixed features, binary classification) or **California Housing** (larger, all numeric, regression).
+
+## Step 1: Load and Inspect the Data
+
+Create a new Python script or Jupyter notebook. Start by loading the data and getting a first look.
+
+```python
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Example: loading from a CSV file
+df = pd.read_csv("data/heart_disease.csv")
+
+# Or from sklearn
+from sklearn.datasets import fetch_california_housing
+housing = fetch_california_housing(as_frame=True)
+df = housing.frame
+```
+
+Run these inspection commands and **write down what you observe** for each one. This is not
+optional — writing forces you to think carefully about what you see.
+
+```python
+# Shape and types
+print(f"Shape: {df.shape}")
+print(f"\nColumn types:\n{df.dtypes}")
+
+# First and last rows
+print(df.head())
+print(df.tail())
+
+# Statistical summary
+print(df.describe())
+
+# Check for missing values
+print(f"\nMissing values:\n{df.isnull().sum()}")
+print(f"\nMissing percentage:\n{(df.isnull().sum() / len(df) * 100).round(2)}")
+
+# Check for duplicates
+print(f"\nDuplicate rows: {df.duplicated().sum()}")
+```
+
+### Questions to Answer
+
+Write answers to each of these in a markdown cell or comment block:
+
+1. How many samples and features does your dataset have?
+2. What is the target variable? Is this a classification or regression problem?
+3. Are there any missing values? In which columns?
+4. What are the data types? Are any of them wrong (e.g., a numeric column stored as a string)?
+5. Are there duplicate rows? Should they be removed?
+
+<CommonMistake>
+Do not skip the inspection step because you assume the data is clean. Even well-known benchmark
+datasets contain surprises — miscoded missing values (e.g., `"?"` instead of `NaN`), duplicate
+entries, or columns that need type conversion. Skipping inspection leads to silent bugs in your
+model later.
+</CommonMistake>
+
+## Step 2: Exploratory Data Analysis (EDA)
+
+EDA has two goals: understand the distribution of each feature, and understand relationships
+between features and the target.
+
+### Univariate Analysis
+
+Plot the distribution of every feature. For numeric features, use histograms or KDE plots.
+For categorical features, use bar charts.
+
+```python
+# Numeric feature distributions
+numeric_cols = df.select_dtypes(include=[np.number]).columns
+fig, axes = plt.subplots(
+    nrows=(len(numeric_cols) + 2) // 3,
+    ncols=3,
+    figsize=(15, 4 * ((len(numeric_cols) + 2) // 3))
+)
+axes = axes.flatten()
+
+for i, col in enumerate(numeric_cols):
+    df[col].hist(bins=30, ax=axes[i], edgecolor="black")
+    axes[i].set_title(col)
+    axes[i].set_xlabel("")
+
+for j in range(i + 1, len(axes)):
+    axes[j].set_visible(False)
+
+plt.tight_layout()
+plt.savefig("plots/feature_distributions.png", dpi=150)
+plt.show()
+```
+
+```python
+# Categorical feature distributions
+cat_cols = df.select_dtypes(include=["object", "category"]).columns
+
+for col in cat_cols:
+    plt.figure(figsize=(8, 4))
+    df[col].value_counts().plot(kind="bar", edgecolor="black")
+    plt.title(f"Distribution of {col}")
+    plt.ylabel("Count")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+```
+
+### What to Look For
+
+- **Skewed distributions**: features with long tails may benefit from log or power transforms.
+- **Class imbalance**: if your target is categorical, check if one class dominates. An 80/20 split
+  is mild; a 99/1 split will require special handling (oversampling, class weights, etc.).
+- **Outliers**: values far from the bulk of the distribution. Decide whether they are data errors
+  or legitimate rare events.
+
+### Bivariate Analysis
+
+Now look at how features relate to the target and to each other.
+
+```python
+# Correlation matrix for numeric features
+plt.figure(figsize=(12, 10))
+corr_matrix = df[numeric_cols].corr()
+sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", center=0, fmt=".2f")
+plt.title("Feature Correlation Matrix")
+plt.tight_layout()
+plt.savefig("plots/correlation_matrix.png", dpi=150)
+plt.show()
+```
+
+```python
+# Scatter plots of top correlated features vs target
+target_col = "target"  # replace with your target column name
+
+correlations = df[numeric_cols].corr()[target_col].drop(target_col).abs().sort_values(ascending=False)
+top_features = correlations.head(6).index
+
+fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+axes = axes.flatten()
+
+for i, feat in enumerate(top_features):
+    axes[i].scatter(df[feat], df[target_col], alpha=0.3, s=10)
+    axes[i].set_xlabel(feat)
+    axes[i].set_ylabel(target_col)
+    axes[i].set_title(f"{feat} vs {target_col}")
+
+plt.tight_layout()
+plt.show()
+```
+
+For classification problems, box plots or violin plots are more informative than scatter plots:
+
+```python
+# For classification: feature distributions by class
+for feat in top_features:
+    plt.figure(figsize=(8, 4))
+    for label in df[target_col].unique():
+        subset = df[df[target_col] == label]
+        subset[feat].hist(bins=30, alpha=0.5, label=f"Class {label}", density=True)
+    plt.title(f"{feat} by {target_col}")
+    plt.legend()
+    plt.show()
+```
+
+<KeyTakeaway>
+EDA is not decoration. Every plot should lead to a concrete decision: should I transform this
+feature? Remove this outlier? Engineer a new feature from these two correlated columns? If a
+plot does not inform a decision, it is wasting your time.
+</KeyTakeaway>
+
+## Step 3: Data Cleaning
+
+Based on what you found in EDA, clean the data systematically.
+
+### Handling Missing Values
+
+Choose a strategy for each column with missing data:
+
+```python
+# Strategy 1: Drop rows (only if very few are missing, < 1-2%)
+df_clean = df.dropna(subset=["column_with_few_missing"])
+
+# Strategy 2: Impute with median (robust to outliers)
+from sklearn.impute import SimpleImputer
+num_imputer = SimpleImputer(strategy="median")
+df_clean[numeric_cols] = num_imputer.fit_transform(df_clean[numeric_cols])
+
+# Strategy 3: Impute with mode (for categorical)
+cat_imputer = SimpleImputer(strategy="most_frequent")
+df_clean[cat_cols] = cat_imputer.fit_transform(df_clean[cat_cols])
+
+# Strategy 4: Create a "missing" indicator feature
+df_clean["age_missing"] = df["age"].isnull().astype(int)
+```
+
+### Handling Outliers
+
+```python
+# Detect outliers using IQR method
+def find_outliers_iqr(series, multiplier=1.5):
+    Q1 = series.quantile(0.25)
+    Q3 = series.quantile(0.75)
+    IQR = Q3 - Q1
+    lower = Q1 - multiplier * IQR
+    upper = Q3 + multiplier * IQR
+    return (series < lower) | (series > upper)
+
+# Check outlier counts
+for col in numeric_cols:
+    outlier_mask = find_outliers_iqr(df_clean[col])
+    count = outlier_mask.sum()
+    if count > 0:
+        print(f"{col}: {count} outliers ({count/len(df_clean)*100:.1f}%)")
+```
+
+Decide per column: clip to bounds, remove, or keep. Document your reasoning.
+
+```python
+# Option A: Clip outliers to IQR bounds
+def clip_outliers(series, multiplier=1.5):
+    Q1 = series.quantile(0.25)
+    Q3 = series.quantile(0.75)
+    IQR = Q3 - Q1
+    lower = Q1 - multiplier * IQR
+    upper = Q3 + multiplier * IQR
+    return series.clip(lower, upper)
+
+# Option B: Remove outlier rows
+df_clean = df_clean[~find_outliers_iqr(df_clean["problematic_column"])]
+```
+
+### Encoding Categorical Features
+
+```python
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+
+# Binary categories: label encode
+le = LabelEncoder()
+df_clean["gender_encoded"] = le.fit_transform(df_clean["gender"])
+
+# Multi-class categories with few unique values: one-hot encode
+df_clean = pd.get_dummies(df_clean, columns=["category_column"], drop_first=True)
+```
+
+<CommonMistake>
+Never one-hot encode a feature with hundreds of unique values — it will explode your feature
+space and cause severe overfitting. For high-cardinality categorical features, consider target
+encoding, frequency encoding, or grouping rare categories into an "other" bucket.
+</CommonMistake>
+
+## Step 4: Feature Engineering
+
+Create new features that encode domain knowledge or capture patterns the raw features miss.
+
+```python
+# Interaction features
+df_clean["age_x_cholesterol"] = df_clean["age"] * df_clean["cholesterol"]
+
+# Ratio features
+df_clean["rooms_per_household"] = df_clean["total_rooms"] / df_clean["households"]
+
+# Binning continuous features
+df_clean["age_group"] = pd.cut(
+    df_clean["age"],
+    bins=[0, 30, 45, 60, 100],
+    labels=["young", "middle", "senior", "elderly"]
+)
+
+# Log transform for skewed features
+skewed_cols = df_clean[numeric_cols].apply(lambda x: x.skew()).abs()
+highly_skewed = skewed_cols[skewed_cols > 1.0].index
+for col in highly_skewed:
+    df_clean[f"{col}_log"] = np.log1p(df_clean[col])
+```
+
+### Feature Scaling
+
+Scale features so that no single feature dominates due to its magnitude.
+
+```python
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+scaler = StandardScaler()
+feature_cols = [c for c in df_clean.columns if c != target_col]
+df_clean[feature_cols] = scaler.fit_transform(df_clean[feature_cols])
+```
+
+<WhyThisMatters>
+Feature scaling is critical for gradient-based models (neural networks, logistic regression) and
+distance-based models (KNN, SVM). Tree-based models are scale-invariant, but scaling still does
+not hurt them. Always scale when in doubt.
+</WhyThisMatters>
+
+## Step 5: Statistical Analysis
+
+Before moving to modeling, quantify the patterns you noticed in EDA.
+
+```python
+from scipy import stats
+
+# Test if a feature differs significantly between classes (classification)
+for feat in top_features:
+    class_0 = df_clean[df_clean[target_col] == 0][feat]
+    class_1 = df_clean[df_clean[target_col] == 1][feat]
+    t_stat, p_value = stats.ttest_ind(class_0, class_1)
+    print(f"{feat}: t={t_stat:.3f}, p={p_value:.4f} {'***' if p_value < 0.001 else ''}")
+
+# For regression: Pearson correlation with p-values
+for feat in numeric_cols:
+    if feat != target_col:
+        r, p = stats.pearsonr(df_clean[feat], df_clean[target_col])
+        print(f"{feat}: r={r:.3f}, p={p:.4f}")
+```
+
+This is not about gatekeeping features by p-value. It is about confirming that the patterns you
+saw in plots are real and not visual artifacts of noisy data.
+
+## Step 6: Train / Validation / Test Split
+
+Split the data into three partitions. The test set is locked away until final evaluation in Phase 2.
+
+```python
+from sklearn.model_selection import train_test_split
+
+X = df_clean.drop(columns=[target_col])
+y = df_clean[target_col]
+
+# First split: 80% train+val, 20% test
+X_temp, X_test, y_temp, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y  # remove stratify for regression
+)
+
+# Second split: 75% train, 25% val (of the 80%) => 60/20/20 overall
+X_train, X_val, y_train, y_val = train_test_split(
+    X_temp, y_temp, test_size=0.25, random_state=42, stratify=y_temp
+)
+
+print(f"Train: {X_train.shape[0]} samples")
+print(f"Val:   {X_val.shape[0]} samples")
+print(f"Test:  {X_test.shape[0]} samples")
+```
+
+<CommonMistake>
+Do not use the test set for any decision-making — not for feature selection, hyperparameter
+tuning, or threshold setting. The test set is your simulation of unseen production data. If you
+peek at it during development, your reported metrics will be optimistically biased.
+</CommonMistake>
+
+### Save the Processed Data
+
+Save your splits so Phase 2 can load them directly without re-running all preprocessing.
+
+```python
+import os
+import joblib
+
+os.makedirs("data/processed", exist_ok=True)
+
+# Save splits
+for name, data in [("X_train", X_train), ("X_val", X_val), ("X_test", X_test),
+                    ("y_train", y_train), ("y_val", y_val), ("y_test", y_test)]:
+    data.to_csv(f"data/processed/{name}.csv", index=False)
+
+# Save the scaler and imputers for use in the serving pipeline
+joblib.dump(scaler, "data/processed/scaler.joblib")
+joblib.dump(num_imputer, "data/processed/num_imputer.joblib")
+
+print("All processed data saved to data/processed/")
+```
+
+## Deliverables Checklist
+
+Before moving to Phase 2, confirm you have completed the following:
+
+- [ ] Dataset loaded and all inspection questions answered in writing
+- [ ] At least 5 meaningful EDA plots saved to a `plots/` directory
+- [ ] Missing values handled with documented reasoning for each column
+- [ ] Outlier analysis completed with documented decisions
+- [ ] At least 2 engineered features created
+- [ ] Categorical features encoded
+- [ ] Features scaled
+- [ ] Data split into train (60%), validation (20%), test (20%) and saved to disk
+- [ ] Preprocessing objects (scaler, imputers) saved with `joblib`
+
+<KeyTakeaway>
+Phase 1 is the foundation of your entire capstone. Rushing through it to get to the "fun" modeling
+part is the single most common mistake in ML projects. If your data pipeline is solid, modeling
+in Phase 2 will go smoothly. If it is not, no amount of model tuning will save you.
+</KeyTakeaway>

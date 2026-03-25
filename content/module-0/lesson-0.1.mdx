@@ -1,0 +1,488 @@
+---
+module: 0
+lesson: 1
+title: "NumPy & Vectorized Thinking"
+description: "NDArrays, broadcasting, and why vectors beat loops"
+prerequisites: []
+estimatedMinutes: 45
+---
+
+# NumPy & Vectorized Thinking
+
+Every machine learning algorithm you will encounter in this course boils down to
+operations on arrays of numbers. Linear regression? Multiply a matrix by a vector.
+Neural networks? Chain dozens of matrix multiplications together. Understanding
+NumPy is not optional preparation -- it **is** the language ML speaks.
+
+In this lesson you will learn to think in vectors instead of loops, a mental shift
+that will make every subsequent topic faster to learn and faster to run.
+
+---
+
+## 1. Why Loops Are Slow and Vectors Are Fast
+
+Suppose you need to add two lists of one million numbers each. The obvious Python
+approach is a `for` loop:
+
+```python
+import time
+
+n = 1_000_000
+a = list(range(n))
+b = list(range(n))
+
+start = time.perf_counter()
+c = [a[i] + b[i] for i in range(n)]
+elapsed_loop = time.perf_counter() - start
+print(f"List comprehension: {elapsed_loop:.4f}s")
+```
+
+Now the NumPy version:
+
+```python
+import numpy as np
+
+a = np.arange(n)
+b = np.arange(n)
+
+start = time.perf_counter()
+c = a + b
+elapsed_vec = time.perf_counter() - start
+print(f"NumPy vectorized:   {elapsed_vec:.4f}s")
+print(f"Speedup:            {elapsed_loop / elapsed_vec:.0f}x")
+```
+
+On a typical machine you will see a **50-200x speedup**. Where does it come from?
+
+### Three reasons NumPy wins
+
+1. **Compiled C loops under the hood.** Each NumPy operation dispatches to
+   optimized C (or Fortran) code. The Python interpreter never touches the
+   individual elements.
+
+2. **CPU SIMD vectorization.** Modern CPUs have instructions (SSE, AVX, NEON) that
+   process 4, 8, or even 16 numbers in a single clock cycle. NumPy's compiled
+   loops use these instructions automatically.
+
+3. **Memory locality.** A NumPy array stores its data in a single contiguous block
+   of memory. A Python list stores *pointers* to individual objects scattered
+   across the heap. Contiguous memory means the CPU cache can prefetch data
+   efficiently, avoiding costly cache misses.
+
+<WhyThisMatters>
+In machine learning you will routinely operate on arrays with millions or billions
+of elements -- training data, weight matrices, gradient tensors. A 100x speedup is
+the difference between a model that trains in one minute versus one that takes
+nearly two hours. Learning to replace Python loops with vectorized operations is
+the single most impactful performance habit you can develop.
+</WhyThisMatters>
+
+---
+
+## 2. NDArrays: Creation, Indexing, Slicing, Reshaping
+
+The core object in NumPy is the **ndarray** (n-dimensional array). Every element
+shares the same data type (usually `float64` or `int64`), which is what makes
+contiguous memory storage possible.
+
+### 2.1 Creating Arrays
+
+```python
+import numpy as np
+
+# From a Python list
+a = np.array([1, 2, 3, 4])          # shape (4,)
+
+# 2-D array from nested lists
+m = np.array([[1, 2], [3, 4]])       # shape (2, 2)
+
+# Pre-filled arrays
+zeros = np.zeros((3, 4))             # 3 rows, 4 cols of 0.0
+ones  = np.ones((2, 5))              # 2 rows, 5 cols of 1.0
+empty = np.empty((2, 3))             # uninitialized (fast)
+
+# Ranges
+r = np.arange(0, 10, 2)              # [0, 2, 4, 6, 8]
+l = np.linspace(0, 1, 5)             # [0.0, 0.25, 0.5, 0.75, 1.0]
+
+# Random arrays (used constantly in ML for initialization)
+rng = np.random.default_rng(42)
+samples = rng.standard_normal((3, 3))  # 3x3 matrix of N(0,1) values
+```
+
+Every array carries metadata you can inspect:
+
+```python
+print(m.shape)    # (2, 2)
+print(m.ndim)     # 2
+print(m.dtype)    # int64
+print(m.size)     # 4 (total elements)
+```
+
+### 2.2 Indexing and Slicing
+
+NumPy indexing follows Python conventions but extends them to multiple dimensions.
+
+```python
+a = np.array([10, 20, 30, 40, 50])
+
+a[0]       # 10          single element
+a[-1]      # 50          last element
+a[1:4]     # [20, 30, 40]  slice (start inclusive, stop exclusive)
+a[::2]     # [10, 30, 50]  every other element
+
+# 2-D indexing: [row, col]
+m = np.arange(12).reshape(3, 4)
+# m is:
+# [[ 0,  1,  2,  3],
+#  [ 4,  5,  6,  7],
+#  [ 8,  9, 10, 11]]
+
+m[1, 2]      # 6          row 1, col 2
+m[0]         # [0, 1, 2, 3]  entire row 0
+m[:, 1]      # [1, 5, 9]  entire column 1
+m[0:2, 1:3]  # [[1, 2], [5, 6]]  submatrix
+```
+
+**Boolean indexing** is especially important for ML data filtering:
+
+```python
+data = np.array([3.2, -1.5, 0.7, -0.3, 2.1])
+
+positives = data[data > 0]      # [3.2, 0.7, 2.1]
+data[data < 0] = 0              # clamp negatives to zero (ReLU!)
+```
+
+<CommonMistake>
+NumPy slices return **views**, not copies. Modifying a slice modifies the original
+array. If you need an independent copy, use `a[1:4].copy()`. This is a frequent
+source of subtle bugs when you think you have a separate array but you are actually
+mutating shared data.
+</CommonMistake>
+
+### 2.3 Reshaping
+
+Reshaping changes an array's dimensions without copying data.
+
+```python
+a = np.arange(12)         # shape (12,)
+b = a.reshape(3, 4)       # shape (3, 4)
+c = a.reshape(2, 2, 3)    # shape (2, 2, 3)
+
+# Use -1 to let NumPy infer one dimension
+d = a.reshape(4, -1)      # shape (4, 3) -- NumPy infers 3
+```
+
+Two especially common reshape patterns in ML:
+
+```python
+# Flatten a matrix to a vector
+flat = b.reshape(-1)       # same as b.ravel()
+
+# Add a "batch" dimension: (n,) -> (1, n)
+row_vec = a.reshape(1, -1) # shape (1, 12)
+col_vec = a.reshape(-1, 1) # shape (12, 1)
+```
+
+<MathNote>
+A vector $\mathbf{x} \in \mathbb{R}^n$ can be treated as a column vector (shape
+$(n, 1)$) or a row vector (shape $(1, n)$). The distinction matters when you
+multiply matrices. In NumPy a 1-D array with shape `(n,)` is neither -- it is a
+plain vector. You must reshape explicitly when matrix algebra requires a specific
+orientation.
+</MathNote>
+
+---
+
+## 3. Broadcasting Rules
+
+Broadcasting is NumPy's mechanism for performing element-wise operations on arrays
+of **different shapes** without making explicit copies. It is one of the most
+powerful -- and most confusing -- features in NumPy.
+
+### The three broadcasting rules
+
+When NumPy operates on two arrays, it compares their shapes element-wise starting
+from the **trailing** (rightmost) dimension and works left:
+
+1. If the dimensions are equal, they are compatible.
+2. If one of the dimensions is **1**, it is stretched to match the other.
+3. If neither condition holds, the operation raises an error.
+
+A dimension that does not exist is treated as size 1 (the array is virtually
+expanded).
+
+### Examples
+
+**Example 1: Scalar + Array**
+
+```python
+a = np.array([1, 2, 3])   # shape (3,)
+b = 10                     # shape ()  -- scalar
+
+c = a + b                  # [11, 12, 13]
+# Scalar is broadcast to [10, 10, 10]
+```
+
+**Example 2: Row + Column**
+
+```python
+row = np.array([[1, 2, 3]])   # shape (1, 3)
+col = np.array([[10],
+                [20],
+                [30]])         # shape (3, 1)
+
+result = row + col
+# shape comparison: (1,3) and (3,1)
+#   dim 1: 1 vs 3 -> stretch to 3
+#   dim 0: 3 vs 1 -> stretch to 3
+# result shape: (3, 3)
+# [[11, 12, 13],
+#  [21, 22, 23],
+#  [31, 32, 33]]
+```
+
+**Example 3: Centering data (subtract the mean)**
+
+This pattern appears in nearly every ML pipeline:
+
+```python
+# X has shape (1000, 5) -- 1000 samples, 5 features
+X = rng.standard_normal((1000, 5))
+
+means = X.mean(axis=0)   # shape (5,)
+X_centered = X - means   # (1000, 5) - (5,) broadcasts to (1000, 5)
+```
+
+<KeyTakeaway>
+Broadcasting lets you write concise, loop-free code for operations that combine
+arrays of different shapes. The rule of thumb: dimensions are compared right to
+left; a size-1 dimension stretches to match, and a missing dimension is treated as
+size 1. If shapes still conflict after these rules, you get an error.
+</KeyTakeaway>
+
+**Example 4: Incompatible shapes (error)**
+
+```python
+a = np.ones((3, 4))
+b = np.ones((2,))
+
+# a + b  -> ERROR
+# Trailing dimensions: 4 vs 2 -- neither is 1 -> incompatible
+```
+
+---
+
+## 4. Core Operations for Machine Learning
+
+### 4.1 Element-wise Arithmetic
+
+All standard operators work element-wise on arrays of the same shape (or
+broadcastable shapes):
+
+```python
+a = np.array([1.0, 2.0, 3.0])
+b = np.array([4.0, 5.0, 6.0])
+
+a + b   # [5.0, 7.0, 9.0]
+a * b   # [4.0, 10.0, 18.0]   element-wise product (Hadamard product)
+a / b   # [0.25, 0.4, 0.5]
+a ** 2  # [1.0, 4.0, 9.0]
+np.exp(a)   # [e^1, e^2, e^3]
+np.log(a)   # [0.0, 0.693, 1.099]
+```
+
+### 4.2 The Dot Product
+
+The dot product is the single most important operation in ML.
+
+<MathNote>
+Given two vectors $\mathbf{a}, \mathbf{b} \in \mathbb{R}^n$, the dot product is:
+
+$$\mathbf{a} \cdot \mathbf{b} = \sum_{i=1}^{n} a_i \, b_i$$
+
+For a matrix $\mathbf{A} \in \mathbb{R}^{m \times k}$ and $\mathbf{B} \in \mathbb{R}^{k \times n}$, the matrix product $\mathbf{C} = \mathbf{A}\mathbf{B}$ has shape $(m, n)$ where:
+
+$$C_{ij} = \sum_{p=1}^{k} A_{ip} \, B_{pj}$$
+</MathNote>
+
+```python
+a = np.array([1, 2, 3])
+b = np.array([4, 5, 6])
+
+# Vector dot product -- three equivalent ways
+np.dot(a, b)     # 32
+a @ b            # 32  (the @ operator, preferred)
+np.sum(a * b)    # 32  (manual: element-wise multiply then sum)
+
+# Matrix multiplication
+A = np.array([[1, 2],
+              [3, 4]])   # (2, 2)
+B = np.array([[5, 6],
+              [7, 8]])   # (2, 2)
+
+C = A @ B
+# [[1*5+2*7, 1*6+2*8],
+#  [3*5+4*7, 3*6+4*8]]
+# = [[19, 22],
+#    [43, 50]]
+```
+
+<WhyThisMatters>
+Linear regression predicts values with $\hat{y} = \mathbf{X}\mathbf{w}$ -- a
+single matrix multiply. A neural network forward pass is a chain of matrix
+multiplies interleaved with element-wise activation functions. If you understand
+`@`, you understand the computational backbone of modern ML.
+</WhyThisMatters>
+
+### 4.3 Aggregations
+
+Aggregation functions reduce an array along one or more axes.
+
+```python
+X = np.array([[1, 2, 3],
+              [4, 5, 6]])   # shape (2, 3)
+
+X.sum()          # 21       -- sum of ALL elements
+X.sum(axis=0)    # [5, 7, 9]  -- sum down rows (collapse axis 0)
+X.sum(axis=1)    # [6, 15]    -- sum across columns (collapse axis 1)
+
+X.mean(axis=0)   # [2.5, 3.5, 4.5]
+X.std(axis=0)    # [1.5, 1.5, 1.5]
+X.max(axis=1)    # [3, 6]
+X.min()          # 1
+
+# argmax / argmin: INDEX of the max/min (critical for classification)
+X.argmax(axis=1) # [2, 2]  -- column index of max in each row
+```
+
+<KeyTakeaway>
+The `axis` parameter answers the question: "Which dimension do I collapse?"
+`axis=0` collapses rows (you get one value per column). `axis=1` collapses columns
+(you get one value per row). Visualize it as *squishing* that dimension away.
+</KeyTakeaway>
+
+### 4.4 Useful Linear Algebra
+
+```python
+A = np.array([[2, 1],
+              [1, 3]], dtype=float)
+
+np.linalg.inv(A)          # matrix inverse
+np.linalg.det(A)          # determinant = 5.0
+eigenvalues, eigenvectors = np.linalg.eig(A)
+
+# Solve Ax = b
+b = np.array([5, 7], dtype=float)
+x = np.linalg.solve(A, b) # more stable than inv(A) @ b
+```
+
+### 4.5 Stacking and Splitting
+
+You will frequently need to combine or split arrays when assembling datasets.
+
+```python
+a = np.array([1, 2, 3])
+b = np.array([4, 5, 6])
+
+np.concatenate([a, b])          # [1, 2, 3, 4, 5, 6]
+np.stack([a, b])                # [[1, 2, 3], [4, 5, 6]]  shape (2, 3)
+np.vstack([a, b])               # same as stack for 1-D inputs
+np.hstack([a.reshape(-1,1),
+           b.reshape(-1,1)])    # [[1, 4], [2, 5], [3, 6]]  shape (3, 2)
+```
+
+---
+
+## 5. Putting It Together: A Mini ML Example
+
+Let us implement the **mean squared error** loss -- the most common loss function
+for regression -- using everything we have learned.
+
+<MathNote>
+Given predictions $\hat{\mathbf{y}}$ and true values $\mathbf{y}$, each of length $n$:
+
+$$\text{MSE} = \frac{1}{n} \sum_{i=1}^{n} (\hat{y}_i - y_i)^2$$
+</MathNote>
+
+```python
+def mse_loop(y_true, y_pred):
+    """Slow loop version."""
+    total = 0.0
+    for i in range(len(y_true)):
+        total += (y_pred[i] - y_true[i]) ** 2
+    return total / len(y_true)
+
+def mse_vectorized(y_true, y_pred):
+    """Fast vectorized version."""
+    errors = y_pred - y_true        # element-wise subtraction
+    return np.mean(errors ** 2)     # square then average
+
+# Test
+y_true = rng.standard_normal(1_000_000)
+y_pred = y_true + rng.standard_normal(1_000_000) * 0.1
+
+print(mse_loop(y_true, y_pred))       # correct but slow
+print(mse_vectorized(y_true, y_pred)) # same answer, ~100x faster
+```
+
+Notice how the vectorized version reads almost exactly like the mathematical
+formula. That is the power of vectorized thinking: your code becomes a direct
+translation of the math.
+
+<CommonMistake>
+When computing errors, the order of subtraction matters for *signed* error but not
+for MSE (because squaring removes the sign). However, be careful with operations
+like `np.log` -- passing zero or negative values will produce `-inf` or `nan`
+silently. Always validate your inputs when debugging unexpected loss values.
+</CommonMistake>
+
+---
+
+## 6. Performance Tips
+
+1. **Avoid Python-level loops over array elements.** If you catch yourself writing
+   `for i in range(len(arr))`, look for a vectorized alternative.
+
+2. **Pre-allocate output arrays** instead of growing them with `np.append` inside a
+   loop. `np.append` copies the entire array each time, resulting in $O(n^2)$
+   behavior.
+
+3. **Use `axis` parameters** instead of slicing + looping. `X.sum(axis=0)` is
+   vastly faster than summing each column in a Python loop.
+
+4. **Avoid unnecessary copies.** Use `reshape` (returns a view) rather than
+   `flatten` (returns a copy) when you do not need to modify the result.
+
+5. **Check dtypes.** Operations on `float32` arrays are faster and use half the
+   memory of `float64`. In ML, `float32` is almost always sufficient.
+
+```python
+# Converting dtype
+X = np.array([1.0, 2.0, 3.0])          # default float64
+X32 = X.astype(np.float32)             # half the memory
+```
+
+---
+
+## Hands-On Lab
+
+In the accompanying lab (`labs/lesson-0.1/`) you will:
+
+1. **Benchmark loops vs. vectors** -- Implement dot product, element-wise
+   operations, and matrix multiplication using both Python loops and NumPy, then
+   compare execution times.
+
+2. **Practice broadcasting** -- Use broadcasting to normalize a dataset (subtract
+   mean, divide by standard deviation) without writing any loops.
+
+3. **Implement MSE and MAE** -- Write vectorized loss functions and verify them
+   against a naive loop implementation.
+
+4. **Reshape challenge** -- Given a 1-D array of pixel values, reshape it into an
+   image tensor of shape `(batch, height, width, channels)` and extract a single
+   color channel.
+
+Open `labs/lesson-0.1/starter.py` to get started. Each exercise has a function stub
+with a docstring explaining the expected behavior and an `assert` to verify
+correctness.

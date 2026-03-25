@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "Why are modern sentence embedding models preferred over averaging word embeddings?",
+      "options": [
+        "They are faster to compute",
+        "They are trained with contrastive objectives that capture sentence-level meaning, handling negation, word order, and compositionality that averaging misses",
+        "They produce lower-dimensional vectors",
+        "They do not require a GPU"
+      ],
+      "correct": "B",
+      "explanation": "Averaging word embeddings loses critical information: 'not good' averages to nearly the same vector as 'good' because 'not' barely shifts the average. Sentence embedding models (like all-MiniLM or text-embedding-3) are transformers trained with contrastive objectives that learn to represent the meaning of entire sentences, including negation, word order, and compositional semantics."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "What is the purpose of approximate nearest neighbor (ANN) algorithms in vector databases?",
+      "options": [
+        "They produce more accurate similarity scores than exact search",
+        "They make similarity search sub-linear (e.g., O(log n)) instead of O(n), enabling search over millions of vectors in milliseconds",
+        "They eliminate the need for embedding models",
+        "They compress vectors to zero dimensions"
+      ],
+      "correct": "B",
+      "explanation": "Exact nearest neighbor search requires comparing the query against every stored vector -- O(n) operations. For millions of vectors, this is too slow. ANN algorithms like HNSW build graph structures that allow finding approximately nearest neighbors in O(log n) time, sacrificing a small amount of accuracy for orders of magnitude speed improvement."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "What are the three steps in Retrieval-Augmented Generation (RAG)?",
+      "options": [
+        "Tokenize, embed, classify",
+        "Retrieve relevant documents based on the query, augment the LLM prompt with those documents, and generate a response grounded in the retrieved context",
+        "Train, validate, test",
+        "Encode, attend, decode"
+      ],
+      "correct": "B",
+      "explanation": "RAG follows three steps: (1) Retrieve -- embed the user's query and search a vector database for relevant documents. (2) Augment -- insert the retrieved documents into the LLM's prompt as context. (3) Generate -- the LLM produces a response that is grounded in the retrieved information, reducing hallucination and enabling access to current or private data."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "Why is document chunking important in a RAG system?",
+      "options": [
+        "LLMs can only process one word at a time",
+        "Full documents are too long for embedding models and too noisy for retrieval -- chunks provide focused, retrievable units that fit within embedding and context limits",
+        "Chunking is required by vector database APIs",
+        "It reduces the cost of the embedding API by exactly 50%"
+      ],
+      "correct": "B",
+      "explanation": "Embedding models have maximum input lengths, and embedding an entire long document dilutes the signal -- the embedding represents the average meaning of all topics in the document. Chunking creates focused, topic-coherent units that can be individually embedded and retrieved. When a user asks a specific question, you retrieve only the relevant chunks rather than entire documents full of irrelevant content."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "From a technical perspective, why does chain-of-thought prompting improve LLM reasoning?",
+      "options": [
+        "It activates special reasoning circuits in the model that are otherwise dormant",
+        "Each generated intermediate token becomes context for subsequent tokens, effectively increasing the model's computational depth beyond what a single forward pass can compute",
+        "It triggers the model to use a different set of weights",
+        "It bypasses the temperature setting for more deterministic output"
+      ],
+      "correct": "B",
+      "explanation": "A single forward pass through an L-layer transformer can only compute functions in TC^0 (constant-depth threshold circuits). By generating intermediate reasoning tokens, each token adds another L layers of computation before the final answer. This allows the model to solve problems requiring sequential reasoning steps that would be impossible in a single forward pass from question to answer."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "What is the basic loop of an LLM agent with tool use?",
+      "options": [
+        "Train the model, deploy it, collect feedback, retrain",
+        "The LLM receives a query and tool descriptions, decides whether to call a tool, the system executes the tool and returns results, and the LLM either calls another tool or generates a final response",
+        "The user selects a tool, the tool runs, and the LLM summarizes the output",
+        "The LLM generates code, compiles it, runs it, and returns the binary"
+      ],
+      "correct": "B",
+      "explanation": "An agent loop works as follows: (1) The LLM receives the user query plus descriptions of available tools. (2) The LLM decides whether it needs a tool and generates a structured tool call (function name + arguments). (3) The system executes the tool call and returns the result. (4) The LLM incorporates the result and either makes another tool call or generates a final answer. This loop repeats until the task is complete."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "What is hybrid search in the context of RAG, and why is it useful?",
+      "options": [
+        "Using two different LLMs and picking the better response",
+        "Combining vector similarity search with keyword search (like BM25) to get better recall -- semantic search finds paraphrases while keyword search catches exact terms",
+        "Searching both the internet and a local database simultaneously",
+        "Using both CPU and GPU for faster search"
+      ],
+      "correct": "B",
+      "explanation": "Semantic (vector) search excels at finding paraphrases and conceptually similar content but can miss exact keyword matches. Keyword search (BM25) excels at finding documents with specific terms (product names, error codes, IDs) but misses paraphrases. Hybrid search combines both, typically with a weighted score, getting the best of both approaches and significantly improving retrieval recall."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "Why should you NOT mix embeddings from different embedding models in the same vector database?",
+      "options": [
+        "Different models produce vectors of different lengths, which cannot be stored together",
+        "Embeddings from different models live in completely different vector spaces, so cosine similarity between them is meaningless -- a query embedded with model A cannot meaningfully match documents embedded with model B",
+        "It violates the licensing terms of most embedding models",
+        "It causes the vector database to crash"
+      ],
+      "correct": "B",
+      "explanation": "Each embedding model learns its own vector space through its own training process. The dimensions have no shared meaning across models -- dimension 42 in model A encodes something completely different from dimension 42 in model B. Computing cosine similarity between vectors from different models produces random, meaningless scores. If you switch embedding models, you must re-embed all documents."
+    }
+  ]
+}

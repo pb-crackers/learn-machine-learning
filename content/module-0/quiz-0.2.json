@@ -1,0 +1,96 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "Which Pandas method gives you the count, mean, standard deviation, min, max, and quartiles for all numeric columns?",
+      "options": [
+        "df.info()",
+        "df.describe()",
+        "df.summary()",
+        "df.stats()"
+      ],
+      "correct": "B",
+      "explanation": "df.describe() returns a summary of central tendency, dispersion, and shape of the distribution for each numeric column. df.info() shows dtypes and non-null counts but not statistics. The other methods do not exist in Pandas."
+    },
+    {
+      "id": "q2",
+      "type": "code_output",
+      "question": "What does the following code produce?\n\n```python\nimport pandas as pd\ndf = pd.DataFrame({'a': [1, 2, None, 4], 'b': [None, 2, 3, 4]})\nprint(df.isnull().sum().tolist())\n```",
+      "options": [
+        "[1, 1]",
+        "[2, 2]",
+        "[1, 0]",
+        "[0, 1]"
+      ],
+      "correct": "A",
+      "explanation": "Column 'a' has one NaN (index 2) and column 'b' has one NaN (index 0). df.isnull().sum() returns [1, 1]."
+    },
+    {
+      "id": "q3",
+      "type": "true_false",
+      "question": "When using boolean filters in Pandas, you can write df[df['age'] > 30 & df['income'] > 50000] without additional parentheses.",
+      "correct": "false",
+      "explanation": "The & operator has higher precedence than comparison operators in Python. You must wrap each condition in parentheses: df[(df['age'] > 30) & (df['income'] > 50000)]. Without parentheses, Python tries to evaluate 30 & df['income'] first, which raises an error."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What is the primary purpose of a correlation heatmap in the ML exploration phase?",
+      "options": [
+        "To determine the optimal number of clusters in the data",
+        "To identify linear relationships between features and detect multicollinearity",
+        "To measure the accuracy of a trained model",
+        "To visualize the decision boundary of a classifier"
+      ],
+      "correct": "B",
+      "explanation": "A correlation heatmap shows pairwise Pearson correlations between all numeric features. This helps identify which features are strongly related to the target (useful for feature selection) and which features are highly correlated with each other (multicollinearity), which can destabilize some models."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "In the standard ML data pipeline, what is the correct order of steps?",
+      "options": [
+        "Model -> Clean -> Visualize -> Load -> Explore",
+        "Load -> Clean -> Model -> Visualize -> Explore",
+        "Load -> Explore -> Clean -> Visualize -> Prepare/Model",
+        "Visualize -> Load -> Explore -> Clean -> Model"
+      ],
+      "correct": "C",
+      "explanation": "The standard pipeline is: Load the data, Explore it (summary stats, dtypes), Clean it (handle missing values, outliers), Visualize it (distributions, correlations), then Prepare for modeling (feature scaling, train/test split). You should not model before understanding and cleaning your data."
+    },
+    {
+      "id": "q6",
+      "type": "true_false",
+      "question": "It is safe to compute feature scaling (mean and standard deviation) on the entire dataset before splitting into training and test sets.",
+      "correct": "false",
+      "explanation": "Computing scaling statistics on the full dataset before splitting causes data leakage -- information from the test set influences the training process. You should split first, compute mean and std from the training set only, then apply those same values to transform the test set."
+    },
+    {
+      "id": "q7",
+      "type": "code_output",
+      "question": "What does the following code print?\n\n```python\nimport pandas as pd\ndf = pd.DataFrame({'cat': ['A', 'B', 'A', 'B', 'A'], 'val': [10, 20, 30, 40, 50]})\nresult = df.groupby('cat')['val'].mean()\nprint(result['A'])\n```",
+      "options": [
+        "10",
+        "30.0",
+        "90",
+        "15.0"
+      ],
+      "correct": "B",
+      "explanation": "Group 'A' contains values [10, 30, 50]. The mean is (10 + 30 + 50) / 3 = 30.0."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "Which plot type would be most appropriate for identifying outliers in a feature across different categories?",
+      "options": [
+        "Line plot",
+        "Pair plot",
+        "Box plot",
+        "Pie chart"
+      ],
+      "correct": "C",
+      "explanation": "Box plots show the median, quartiles, and outliers (as individual points beyond the whiskers) for each category. This makes them ideal for spotting outliers and comparing distributions across groups. Line plots show trends, pair plots show pairwise relationships, and pie charts show proportions."
+    }
+  ]
+}

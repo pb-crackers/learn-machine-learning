@@ -1,0 +1,638 @@
+---
+module: 5
+lesson: 3
+title: "Phase 3: API, Serving & Putting It All Together"
+description: "FastAPI backend, model serving, and documentation"
+prerequisites: ["5.2"]
+estimatedMinutes: 90
+---
+
+# Phase 3: API, Serving & Putting It All Together
+
+A model that lives in a notebook is a prototype. A model behind an API is a product. In this
+final phase, you will serialize your trained model, wrap it in a FastAPI backend, add input
+validation, write a test script, and document the entire project. By the end, someone else
+should be able to clone your repository and get predictions from your model with a single
+HTTP request.
+
+<WhyThisMatters>
+Most ML job postings include "deploy models to production" as a requirement. Building an API
+around your model demonstrates that you understand the full lifecycle — not just the Jupyter
+notebook part. This phase is what turns a school project into a portfolio piece.
+</WhyThisMatters>
+
+## Step 1: Model Serialization
+
+You need to save your model in a format that can be loaded without the training code. You
+already saved a checkpoint in Phase 2. Now make sure the serialization is self-contained.
+
+### PyTorch Model
+
+```python
+import torch
+import torch.nn as nn
+
+# Recreate the model class (this must be importable by the serving code)
+class TabularNet(nn.Module):
+    def __init__(self, input_dim, hidden_dims, output_dim, dropout_rate=0.3):
+        super().__init__()
+
+        layers = []
+        prev_dim = input_dim
+
+        for h_dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, h_dim))
+            layers.append(nn.BatchNorm1d(h_dim))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(dropout_rate))
+            prev_dim = h_dim
+
+        layers.append(nn.Linear(prev_dim, output_dim))
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.network(x)
+```
+
+Create a `model.py` file that contains your model class. Both the training script and the
+serving code will import from this file.
+
+```python
+# model.py
+# Copy the TabularNet class here so it is importable from one place.
+```
+
+### Loading the Checkpoint
+
+```python
+import joblib
+
+def load_model(checkpoint_path="models/final_model.pt"):
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+    model = TabularNet(
+        input_dim=checkpoint["input_dim"],
+        hidden_dims=checkpoint["hidden_dims"],
+        output_dim=checkpoint["output_dim"],
+        dropout_rate=checkpoint["dropout_rate"],
+    )
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+    return model
+
+def load_preprocessors():
+    scaler = joblib.load("data/processed/scaler.joblib")
+    imputer = joblib.load("data/processed/num_imputer.joblib")
+    return scaler, imputer
+```
+
+<CommonMistake>
+A common deployment bug is forgetting to call `model.eval()` after loading. In eval mode,
+dropout is disabled and batch normalization uses running statistics instead of batch statistics.
+If you serve predictions with the model in training mode, your results will be noisy and
+non-deterministic.
+</CommonMistake>
+
+## Step 2: Build the Prediction Pipeline
+
+Before building the API, write a pure Python function that takes raw input and returns a
+prediction. This function encapsulates all preprocessing and inference logic.
+
+```python
+import numpy as np
+import pandas as pd
+
+def predict(raw_input: dict, model, scaler, imputer, feature_names: list) -> dict:
+    """
+    Takes a raw input dictionary, preprocesses it, runs inference,
+    and returns a prediction dictionary.
+
+    Parameters
+    ----------
+    raw_input : dict
+        Feature name -> value mapping. Example: {"age": 45, "cholesterol": 200}
+    model : TabularNet
+        Loaded PyTorch model in eval mode.
+    scaler : StandardScaler
+        Fitted scaler from Phase 1.
+    imputer : SimpleImputer
+        Fitted imputer from Phase 1.
+    feature_names : list
+        Ordered list of feature names the model expects.
+
+    Returns
+    -------
+    dict
+        {"prediction": int_or_float, "probability": float (for classification)}
+    """
+    # Create DataFrame with correct column order
+    df = pd.DataFrame([raw_input])
+
+    # Ensure all expected columns are present
+    for col in feature_names:
+        if col not in df.columns:
+            df[col] = np.nan
+
+    df = df[feature_names]
+
+    # Apply preprocessing
+    df_imputed = pd.DataFrame(imputer.transform(df), columns=feature_names)
+    df_scaled = pd.DataFrame(scaler.transform(df_imputed), columns=feature_names)
+
+    # Convert to tensor and predict
+    input_tensor = torch.tensor(df_scaled.values, dtype=torch.float32)
+
+    with torch.no_grad():
+        logits = model(input_tensor)
+        probability = torch.sigmoid(logits).item()
+        prediction = int(probability > 0.5)
+
+    return {
+        "prediction": prediction,
+        "probability": round(probability, 4),
+    }
+```
+
+Test this function locally before putting it behind an API:
+
+```python
+# Sanity check
+model = load_model()
+scaler, imputer = load_preprocessors()
+feature_names = list(pd.read_csv("data/processed/X_train.csv").columns)
+
+sample = {"age": 55, "sex": 1, "cp": 2, "trestbps": 140, "chol": 250,
+          "fbs": 0, "restecg": 1, "thalach": 150, "exang": 0,
+          "oldpeak": 1.5, "slope": 1, "ca": 0, "thal": 2}
+
+result = predict(sample, model, scaler, imputer, feature_names)
+print(result)
+# Expected: {"prediction": 1, "probability": 0.7832}  (values will differ)
+```
+
+## Step 3: FastAPI Application
+
+### Install Dependencies
+
+```bash
+pip install fastapi uvicorn pydantic
+```
+
+### Create the Application
+
+Create a file called `app.py` in your project root.
+
+```python
+# app.py
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+import pandas as pd
+import torch
+
+from model import TabularNet, load_model, load_preprocessors
+
+# --- Application Setup ---
+
+app = FastAPI(
+    title="ML Capstone Prediction API",
+    description="Serves predictions from a trained classification/regression model.",
+    version="1.0.0",
+)
+
+# Load model and preprocessors at startup
+model = None
+scaler = None
+imputer = None
+feature_names = None
+
+
+@app.on_event("startup")
+def startup_event():
+    global model, scaler, imputer, feature_names
+    model = load_model("models/final_model.pt")
+    scaler, imputer = load_preprocessors()
+    feature_names = list(pd.read_csv("data/processed/X_train.csv").columns)
+    print(f"Model loaded. Expecting {len(feature_names)} features.")
+
+
+# --- Request / Response Schemas ---
+
+class PredictionRequest(BaseModel):
+    """
+    Input features for prediction. Adjust field names and types
+    to match your dataset.
+    """
+    # Example fields for Heart Disease dataset:
+    age: float = Field(..., ge=0, le=120, description="Age in years")
+    sex: int = Field(..., ge=0, le=1, description="0 = female, 1 = male")
+    cp: int = Field(..., ge=0, le=3, description="Chest pain type (0-3)")
+    trestbps: float = Field(..., ge=50, le=300, description="Resting blood pressure (mm Hg)")
+    chol: float = Field(..., ge=50, le=600, description="Serum cholesterol (mg/dl)")
+    fbs: int = Field(..., ge=0, le=1, description="Fasting blood sugar > 120 mg/dl")
+    restecg: int = Field(..., ge=0, le=2, description="Resting ECG results (0-2)")
+    thalach: float = Field(..., ge=50, le=250, description="Maximum heart rate achieved")
+    exang: int = Field(..., ge=0, le=1, description="Exercise induced angina")
+    oldpeak: float = Field(..., ge=0, le=10, description="ST depression induced by exercise")
+    slope: int = Field(..., ge=0, le=2, description="Slope of peak exercise ST segment")
+    ca: int = Field(..., ge=0, le=4, description="Number of major vessels colored by fluoroscopy")
+    thal: int = Field(..., ge=0, le=3, description="Thalassemia type (0-3)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "age": 55, "sex": 1, "cp": 2, "trestbps": 140, "chol": 250,
+                "fbs": 0, "restecg": 1, "thalach": 150, "exang": 0,
+                "oldpeak": 1.5, "slope": 1, "ca": 0, "thal": 2,
+            }
+        }
+
+
+class PredictionResponse(BaseModel):
+    prediction: int = Field(..., description="Predicted class label")
+    probability: float = Field(..., description="Predicted probability for positive class")
+    model_version: str = Field(default="1.0.0")
+
+
+# --- Endpoints ---
+
+@app.get("/health")
+def health_check():
+    """Returns server status and whether the model is loaded."""
+    return {
+        "status": "healthy",
+        "model_loaded": model is not None,
+    }
+
+
+@app.post("/predict", response_model=PredictionResponse)
+def make_prediction(request: PredictionRequest):
+    """
+    Accepts input features and returns a model prediction.
+
+    The input is validated against the schema. Missing or out-of-range
+    values will return a 422 error with details.
+    """
+    try:
+        raw_input = request.model_dump()
+
+        result = predict_from_raw(raw_input)
+
+        return PredictionResponse(
+            prediction=result["prediction"],
+            probability=result["probability"],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+def predict_from_raw(raw_input: dict) -> dict:
+    """Internal prediction function using the globally loaded model."""
+    import numpy as np
+
+    df = pd.DataFrame([raw_input])
+
+    for col in feature_names:
+        if col not in df.columns:
+            df[col] = np.nan
+
+    df = df[feature_names]
+    df_imputed = pd.DataFrame(imputer.transform(df), columns=feature_names)
+    df_scaled = pd.DataFrame(scaler.transform(df_imputed), columns=feature_names)
+
+    input_tensor = torch.tensor(df_scaled.values, dtype=torch.float32)
+
+    with torch.no_grad():
+        logits = model(input_tensor)
+        probability = torch.sigmoid(logits).item()
+        prediction = int(probability > 0.5)
+
+    return {"prediction": prediction, "probability": round(probability, 4)}
+```
+
+### Run the Server
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Visit `http://localhost:8000/docs` to see the auto-generated Swagger documentation. FastAPI
+creates interactive docs for free — you can test your endpoint right from the browser.
+
+<KeyTakeaway>
+FastAPI generates OpenAPI documentation automatically from your Pydantic models. Every field
+description and constraint you write in your `PredictionRequest` class becomes part of the
+API documentation. Writing good schemas is writing good docs.
+</KeyTakeaway>
+
+## Step 4: Test the API
+
+Write a test script that sends requests to your running API and verifies the responses.
+
+```python
+# test_api.py
+import requests
+import json
+
+BASE_URL = "http://localhost:8000"
+
+
+def test_health():
+    response = requests.get(f"{BASE_URL}/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert data["model_loaded"] is True
+    print("PASS: Health check")
+
+
+def test_prediction_valid_input():
+    payload = {
+        "age": 55, "sex": 1, "cp": 2, "trestbps": 140, "chol": 250,
+        "fbs": 0, "restecg": 1, "thalach": 150, "exang": 0,
+        "oldpeak": 1.5, "slope": 1, "ca": 0, "thal": 2,
+    }
+    response = requests.post(f"{BASE_URL}/predict", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "prediction" in data
+    assert "probability" in data
+    assert data["prediction"] in [0, 1]
+    assert 0.0 <= data["probability"] <= 1.0
+    print(f"PASS: Valid prediction -> {data}")
+
+
+def test_prediction_invalid_input():
+    # Missing required field
+    payload = {"age": 55}
+    response = requests.post(f"{BASE_URL}/predict", json=payload)
+    assert response.status_code == 422
+    print("PASS: Invalid input rejected with 422")
+
+
+def test_prediction_out_of_range():
+    payload = {
+        "age": -5, "sex": 1, "cp": 2, "trestbps": 140, "chol": 250,
+        "fbs": 0, "restecg": 1, "thalach": 150, "exang": 0,
+        "oldpeak": 1.5, "slope": 1, "ca": 0, "thal": 2,
+    }
+    response = requests.post(f"{BASE_URL}/predict", json=payload)
+    assert response.status_code == 422
+    print("PASS: Out-of-range value rejected with 422")
+
+
+def test_batch_predictions():
+    """Send multiple predictions and check consistency."""
+    payload = {
+        "age": 55, "sex": 1, "cp": 2, "trestbps": 140, "chol": 250,
+        "fbs": 0, "restecg": 1, "thalach": 150, "exang": 0,
+        "oldpeak": 1.5, "slope": 1, "ca": 0, "thal": 2,
+    }
+
+    results = []
+    for _ in range(5):
+        response = requests.post(f"{BASE_URL}/predict", json=payload)
+        results.append(response.json()["probability"])
+
+    # Same input should give same output (model is in eval mode)
+    assert len(set(results)) == 1, f"Non-deterministic results: {results}"
+    print("PASS: Deterministic predictions confirmed")
+
+
+if __name__ == "__main__":
+    test_health()
+    test_prediction_valid_input()
+    test_prediction_invalid_input()
+    test_prediction_out_of_range()
+    test_batch_predictions()
+    print("\nAll tests passed.")
+```
+
+Run the tests:
+
+```bash
+# Terminal 1: Start the server
+uvicorn app:app --host 0.0.0.0 --port 8000
+
+# Terminal 2: Run tests
+python test_api.py
+```
+
+<CommonMistake>
+Do not only test the happy path. Production APIs receive malformed JSON, missing fields,
+wrong types, and extreme values. Your test script should verify that bad inputs are rejected
+gracefully with proper HTTP status codes (422 for validation errors), not that they cause a
+500 server crash.
+</CommonMistake>
+
+## Step 5: Input Validation Deep Dive
+
+Pydantic handles most validation through field constraints, but you may need custom validators
+for complex rules.
+
+```python
+from pydantic import BaseModel, Field, model_validator
+
+class PredictionRequest(BaseModel):
+    age: float = Field(..., ge=0, le=120)
+    systolic_bp: float = Field(..., ge=50, le=300)
+    diastolic_bp: float = Field(..., ge=30, le=200)
+
+    @model_validator(mode="after")
+    def check_blood_pressure(self):
+        if self.systolic_bp <= self.diastolic_bp:
+            raise ValueError(
+                f"Systolic BP ({self.systolic_bp}) must be greater than "
+                f"diastolic BP ({self.diastolic_bp})"
+            )
+        return self
+```
+
+You can also add type coercion for robust handling of string-encoded numbers:
+
+```python
+from pydantic import field_validator
+
+class PredictionRequest(BaseModel):
+    age: float
+
+    @field_validator("age", mode="before")
+    @classmethod
+    def coerce_age(cls, v):
+        if isinstance(v, str):
+            try:
+                return float(v)
+            except ValueError:
+                raise ValueError(f"Cannot convert '{v}' to a number")
+        return v
+```
+
+## Step 6: Project Documentation
+
+Your project needs a README that lets someone else understand, run, and evaluate your work.
+
+### README Structure
+
+Create a `README.md` in your project root with these sections:
+
+```markdown
+# Project Title
+
+One-sentence description of what the model predicts.
+
+## Dataset
+
+- **Source**: Where you got the data (URL)
+- **Size**: Number of samples and features
+- **Task**: Classification or regression
+- **Target**: What you are predicting
+
+## Results
+
+| Model               | Validation F1 | Test F1 |
+|---------------------|---------------|---------|
+| Logistic Regression | 0.82          | 0.80    |
+| Random Forest       | 0.87          | 0.85    |
+| Neural Network      | 0.89          | 0.87    |
+
+## Project Structure
+
+```
+project/
+├── data/
+│   ├── raw/               # Original dataset
+│   └── processed/         # Train/val/test splits, scaler, imputer
+├── models/                # Saved model checkpoints
+├── plots/                 # EDA and training visualizations
+├── results/               # Model comparison CSV
+├── app.py                 # FastAPI application
+├── model.py               # Model class definition
+├── test_api.py            # API test script
+├── requirements.txt       # Python dependencies
+└── README.md
+```
+
+## Setup and Installation
+
+```bash
+pip install -r requirements.txt
+```
+
+## Running the API
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+## Making Predictions
+
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"age": 55, "sex": 1, ...}'
+```
+
+## Key Decisions and Lessons Learned
+
+Document 3-5 important decisions you made and what you learned.
+```
+
+### requirements.txt
+
+```text
+pandas>=2.0
+numpy>=1.24
+scikit-learn>=1.3
+torch>=2.0
+matplotlib>=3.7
+seaborn>=0.12
+fastapi>=0.100
+uvicorn>=0.23
+pydantic>=2.0
+joblib>=1.3
+requests>=2.31
+```
+
+## Step 7: Self-Assessment Rubric
+
+Grade yourself honestly on each dimension. This rubric mirrors what a hiring manager would
+use to evaluate a take-home project.
+
+### Data Pipeline (Phase 1) — 25 points
+
+| Criterion | Points | Self-Score |
+|-----------|--------|------------|
+| Data loaded and inspected with written observations | 5 | |
+| EDA with at least 5 meaningful, labeled plots | 5 | |
+| Missing values handled with documented reasoning | 5 | |
+| Feature engineering (at least 2 new features) | 5 | |
+| Proper train/val/test split with preprocessing saved | 5 | |
+
+### Modeling (Phase 2) — 35 points
+
+| Criterion | Points | Self-Score |
+|-----------|--------|------------|
+| Baseline model trained and evaluated | 5 | |
+| Neural network designed and trained with proper loop | 10 | |
+| Learning curves plotted and interpreted | 5 | |
+| At least 3 logged experiments with 1-variable changes | 10 | |
+| Test set evaluated exactly once, results close to val | 5 | |
+
+### API & Deployment (Phase 3) — 25 points
+
+| Criterion | Points | Self-Score |
+|-----------|--------|------------|
+| Model loads and serves predictions via POST endpoint | 10 | |
+| Input validation with proper error responses | 5 | |
+| Test script covers valid, invalid, and edge cases | 5 | |
+| Deterministic predictions (model in eval mode) | 5 | |
+
+### Documentation & Code Quality — 15 points
+
+| Criterion | Points | Self-Score |
+|-----------|--------|------------|
+| README with setup instructions, results, and structure | 5 | |
+| Code is modular (model.py, app.py, etc.) | 5 | |
+| requirements.txt or environment file present | 2 | |
+| Key decisions documented with reasoning | 3 | |
+
+**Total: \_\_\_ / 100**
+
+<WhyThisMatters>
+Self-assessment is a professional skill. In industry, you will review your own work before
+submitting it. The ability to objectively identify weaknesses in your own project — and either
+fix them or acknowledge them — is what separates strong engineers from average ones.
+</WhyThisMatters>
+
+## Stretch Goals
+
+If you finish early or want to push yourself further:
+
+- **Add a `/batch_predict` endpoint** that accepts a list of inputs and returns a list of predictions.
+- **Containerize with Docker**: write a `Dockerfile` and `docker-compose.yml` so the entire
+  project runs with `docker compose up`.
+- **Add logging**: use Python's `logging` module to log every prediction request with a timestamp
+  and input hash.
+- **Add monitoring**: track prediction distributions over time to detect data drift.
+- **Build a simple frontend**: create an HTML form that sends requests to your API and displays
+  results.
+- **Try ONNX export**: convert your PyTorch model to ONNX format for faster inference.
+
+## Final Checklist
+
+- [ ] `model.py` contains the model class and loading functions
+- [ ] `app.py` runs and serves predictions on `POST /predict`
+- [ ] `GET /health` returns status and model-loaded flag
+- [ ] Input validation rejects missing fields and out-of-range values
+- [ ] `test_api.py` passes all tests against the running server
+- [ ] Predictions are deterministic (same input yields same output)
+- [ ] `README.md` is complete and someone else could run the project from it
+- [ ] `requirements.txt` lists all dependencies
+- [ ] Self-assessment rubric is filled out honestly
+- [ ] All code, plots, and results are committed to version control
+
+<KeyTakeaway>
+You have now built an end-to-end machine learning system: from raw data to a deployed API.
+This is the same workflow used in industry, just at a smaller scale. Every future ML project
+you work on will follow these same phases — data, models, deployment — so the habits you
+built here will compound over your entire career.
+</KeyTakeaway>

@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "What is the correct order of steps in one iteration of neural network training?",
+      "options": [
+        "Compute loss, forward pass, backward pass, update weights",
+        "Forward pass, compute loss, backward pass, update weights",
+        "Backward pass, forward pass, update weights, compute loss",
+        "Update weights, forward pass, compute loss, backward pass"
+      ],
+      "correct": "B",
+      "explanation": "The training loop follows: (1) forward pass to compute predictions, (2) compute the loss measuring prediction error, (3) backward pass to compute gradients of the loss with respect to all weights, (4) update weights using gradient descent."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "What mathematical principle is backpropagation fundamentally based on?",
+      "options": [
+        "Bayes' theorem",
+        "The chain rule of calculus",
+        "The central limit theorem",
+        "Matrix decomposition"
+      ],
+      "correct": "B",
+      "explanation": "Backpropagation is the systematic application of the chain rule to compute the gradient of the loss function with respect to every weight in the network. The chain rule allows us to decompose the gradient through a composition of functions (the network's layers) into a product of local gradients."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "Why must intermediate values (z and a for each layer) be stored during the forward pass?",
+      "options": [
+        "They are needed to display the network's architecture",
+        "They are used for data augmentation",
+        "They are required by the backward pass to compute gradients",
+        "They are needed to normalize the inputs"
+      ],
+      "correct": "C",
+      "explanation": "The backward pass needs z values to compute activation derivatives and a values to compute weight gradients (dW[l] = dz[l].T @ a[l-1]). Without these cached values, you would need to redo the forward pass for each layer during backprop, which would be extremely inefficient."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What happens when the learning rate is set too high?",
+      "options": [
+        "Training is very slow but always converges",
+        "The model underfits because it cannot learn complex patterns",
+        "Weight updates overshoot, causing the loss to oscillate or diverge",
+        "The model memorizes the training data perfectly"
+      ],
+      "correct": "C",
+      "explanation": "A learning rate that is too high causes large weight updates that overshoot the minimum of the loss function. This leads to oscillation around the minimum or, in severe cases, divergence where the loss increases without bound."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "Which loss function is appropriate for a multi-class classification problem?",
+      "options": [
+        "Mean Squared Error",
+        "Binary Cross-Entropy",
+        "Categorical Cross-Entropy",
+        "Hinge Loss"
+      ],
+      "correct": "C",
+      "explanation": "Categorical cross-entropy (used with softmax output) is the standard loss for multi-class classification. Binary cross-entropy is for two-class problems. MSE is for regression. Categorical cross-entropy properly handles probability distributions over multiple classes."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "What is the vanishing gradient problem?",
+      "options": [
+        "Gradients become too large and cause numerical overflow",
+        "Gradients shrink exponentially as they propagate through many layers, preventing early layers from learning",
+        "The learning rate automatically decreases to zero during training",
+        "The network runs out of memory storing gradient values"
+      ],
+      "correct": "B",
+      "explanation": "When using activations like sigmoid (max derivative 0.25), gradients are multiplied by values less than 1 at each layer during backprop. After many layers, these products become vanishingly small, so early layers receive near-zero gradients and learn extremely slowly or not at all."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "Why is mini-batch gradient descent preferred over both full-batch and single-sample SGD?",
+      "options": [
+        "It uses the least memory of all three approaches",
+        "It guarantees convergence to the global minimum",
+        "It balances gradient accuracy and computational efficiency, and can escape local minima",
+        "It eliminates the need for a learning rate"
+      ],
+      "correct": "C",
+      "explanation": "Mini-batch GD provides a good trade-off: gradients are more stable than single-sample SGD (less noise) but computed faster than full-batch GD. The moderate noise actually helps escape poor local minima. It also makes efficient use of GPU parallelism. Typical batch sizes are 32 to 512."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "During training, if the training loss decreases but the validation loss starts increasing, what is happening?",
+      "options": [
+        "The learning rate is too small",
+        "The model is underfitting",
+        "The model is overfitting to the training data",
+        "The batch size is too large"
+      ],
+      "correct": "C",
+      "explanation": "A divergence between training and validation loss (training decreasing, validation increasing) is the classic sign of overfitting. The model is memorizing training data patterns (including noise) rather than learning generalizable features. Solutions include regularization, dropout, early stopping, or more training data."
+    }
+  ]
+}

@@ -1,0 +1,583 @@
+---
+module: 3
+lesson: 3
+title: "Deep Learning with PyTorch"
+description: "Move from hand-coded neural networks to PyTorch — learn tensors, automatic differentiation, nn.Module, and how to build, train, and save deep learning models."
+prerequisites: ["3.2"]
+estimatedMinutes: 55
+---
+
+# Deep Learning with PyTorch
+
+In Lesson 3.2, you implemented backpropagation from scratch. You computed every derivative by hand, managed weight matrices manually, and wrote the training loop yourself. That was essential for understanding --- but nobody builds production neural networks that way. In this lesson, you will learn **PyTorch**, a framework that automates gradient computation and provides high-level building blocks for deep learning.
+
+<WhyThisMatters>
+PyTorch is the dominant deep learning framework in research and is rapidly gaining ground in industry. It is used at Meta, Tesla, OpenAI, and thousands of other organizations. Learning PyTorch is not optional for a practicing ML engineer --- it is the standard tool of the trade. The skills you learn here transfer directly to real-world projects.
+</WhyThisMatters>
+
+## Why Use a Framework?
+
+Writing neural networks from scratch has serious limitations:
+
+1. **Manual gradient computation** is error-prone and does not scale to complex architectures.
+2. **No GPU acceleration** --- NumPy runs on CPU only; deep learning needs GPUs for speed.
+3. **No ecosystem** --- you would need to rewrite common layers, optimizers, and data loading from scratch.
+
+PyTorch solves all of these:
+
+| Feature | From Scratch (NumPy) | PyTorch |
+|---------|---------------------|---------|
+| Gradient computation | Manual (backprop by hand) | Automatic (autograd) |
+| Hardware | CPU only | CPU + GPU + TPU |
+| Common layers | Build yourself | `nn.Linear`, `nn.Conv2d`, etc. |
+| Optimizers | Build yourself | `optim.SGD`, `optim.Adam`, etc. |
+| Data loading | Build yourself | `DataLoader`, `Dataset` |
+
+## PyTorch Tensors
+
+The fundamental data structure in PyTorch is the **tensor** --- a multi-dimensional array, similar to a NumPy ndarray but with two superpowers: GPU support and automatic differentiation.
+
+```python
+import torch
+import numpy as np
+
+# Creating tensors
+a = torch.tensor([1.0, 2.0, 3.0])         # From a list
+b = torch.zeros(3, 4)                       # 3x4 matrix of zeros
+c = torch.randn(2, 3)                       # Random normal distribution
+d = torch.arange(0, 10, 2)                  # Like np.arange
+
+print(f"a: {a}")
+print(f"b shape: {b.shape}")
+print(f"c:\n{c}")
+print(f"d: {d}")
+```
+
+```
+a: tensor([1., 2., 3.])
+b shape: torch.Size([3, 4])
+c:
+tensor([[ 0.4523, -1.2301,  0.8845],
+        [-0.3112,  0.5543, -0.7789]])
+d: tensor([0, 2, 4, 6, 8])
+```
+
+### NumPy Interoperability
+
+Converting between NumPy and PyTorch is seamless:
+
+```python
+# NumPy to PyTorch
+np_array = np.array([1.0, 2.0, 3.0])
+torch_tensor = torch.from_numpy(np_array)
+
+# PyTorch to NumPy
+back_to_numpy = torch_tensor.numpy()
+
+# They share memory! Changing one changes the other.
+np_array[0] = 99.0
+print(f"Torch tensor after modifying NumPy: {torch_tensor}")
+# tensor([99.,  2.,  3.])
+```
+
+<CommonMistake>
+`torch.from_numpy()` shares memory with the original NumPy array. Modifying one changes the other. If you want an independent copy, use `torch.tensor(np_array)` instead, which always copies the data.
+</CommonMistake>
+
+### Tensor Operations
+
+PyTorch operations mirror NumPy closely:
+
+```python
+x = torch.randn(3, 4)
+y = torch.randn(3, 4)
+
+# Element-wise operations
+z = x + y                    # Addition
+z = x * y                    # Element-wise multiplication
+z = torch.relu(x)            # ReLU activation
+
+# Matrix multiplication
+a = torch.randn(3, 4)
+b = torch.randn(4, 5)
+c = a @ b                    # or torch.matmul(a, b) -> shape (3, 5)
+
+# Reshaping
+x = torch.randn(2, 3, 4)
+x_flat = x.view(2, -1)       # (2, 12) -- -1 infers the dimension
+x_flat = x.reshape(2, 12)    # Same result, but works with non-contiguous tensors
+
+# Indexing (same as NumPy)
+x = torch.randn(5, 3)
+first_row = x[0]             # Shape (3,)
+first_col = x[:, 0]          # Shape (5,)
+subset = x[1:3, :2]          # Shape (2, 2)
+```
+
+### GPU Support
+
+```python
+# Check if GPU is available
+print(f"CUDA available: {torch.cuda.is_available()}")
+
+# Move tensor to GPU
+if torch.cuda.is_available():
+    device = torch.device('cuda')
+    x_gpu = torch.randn(3, 3, device=device)
+    print(f"Tensor on: {x_gpu.device}")  # cuda:0
+
+    # Move existing tensor to GPU
+    x_cpu = torch.randn(3, 3)
+    x_gpu = x_cpu.to(device)
+
+    # Move back to CPU (e.g., for NumPy conversion)
+    x_back = x_gpu.cpu()
+
+# Device-agnostic code pattern
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+x = torch.randn(3, 3, device=device)
+```
+
+## Autograd: Automatic Differentiation
+
+This is PyTorch's killer feature. Set `requires_grad=True` on a tensor, and PyTorch tracks every operation on it, building a **computation graph**. Then call `.backward()` to compute all gradients automatically.
+
+```python
+# Simple example: compute gradient of y = x^2 + 3x at x = 2
+x = torch.tensor(2.0, requires_grad=True)
+y = x**2 + 3*x     # y = 4 + 6 = 10
+
+y.backward()        # Compute dy/dx
+
+print(f"x = {x.item()}")
+print(f"y = {y.item()}")
+print(f"dy/dx = {x.grad.item()}")   # dy/dx = 2x + 3 = 7
+```
+
+```
+x = 2.0
+y = 10.0
+dy/dx = 7.0
+```
+
+### Autograd with Multiple Variables
+
+```python
+# Gradient of a function with two inputs
+w = torch.tensor(3.0, requires_grad=True)
+b = torch.tensor(1.0, requires_grad=True)
+x = torch.tensor(2.0)  # Input, no gradient needed
+
+# Forward: y = wx + b
+y = w * x + b
+
+# Loss: L = (y - target)^2
+target = torch.tensor(10.0)
+loss = (y - target) ** 2    # (7 - 10)^2 = 9
+
+loss.backward()
+
+print(f"Prediction: {y.item()}")          # 7.0
+print(f"Loss: {loss.item()}")             # 9.0
+print(f"dL/dw = {w.grad.item()}")         # 2*(y-target)*x = 2*(-3)*2 = -12
+print(f"dL/db = {b.grad.item()}")         # 2*(y-target)*1 = 2*(-3) = -6
+```
+
+<MathNote>
+PyTorch's autograd builds a **directed acyclic graph (DAG)** of operations during the forward pass. Each node knows its local gradient. During `.backward()`, PyTorch traverses this graph in reverse, applying the chain rule at each node.
+
+This is exactly the backpropagation algorithm from Lesson 3.2 --- but automated. You no longer need to derive or implement gradients by hand.
+</MathNote>
+
+### Important Autograd Rules
+
+```python
+# 1. Gradients accumulate! You must zero them before each backward pass.
+x = torch.tensor(3.0, requires_grad=True)
+
+y1 = x ** 2
+y1.backward()
+print(f"After first backward: {x.grad}")   # 6.0
+
+y2 = x ** 2
+y2.backward()
+print(f"After second backward: {x.grad}")  # 12.0 (accumulated!)
+
+# Fix: zero gradients manually
+x.grad.zero_()
+y3 = x ** 2
+y3.backward()
+print(f"After zeroing + backward: {x.grad}")  # 6.0
+
+# 2. Detach tensors from the graph when you don't need gradients
+x = torch.tensor(2.0, requires_grad=True)
+y = x ** 2
+z = y.detach()  # z is now a regular tensor, no gradient tracking
+print(f"z requires grad: {z.requires_grad}")  # False
+
+# 3. Use torch.no_grad() during inference (saves memory and time)
+with torch.no_grad():
+    # No computation graph is built here
+    predictions = x * 2 + 1
+```
+
+<CommonMistake>
+Forgetting to zero gradients is one of the most common PyTorch bugs. Gradients accumulate by default across `.backward()` calls. In a training loop, always call `optimizer.zero_grad()` before each backward pass. This accumulation behavior is intentional (it is useful for gradient accumulation across mini-batches), but it will silently corrupt your training if you forget to zero.
+</CommonMistake>
+
+## Building Neural Networks with nn.Module
+
+PyTorch provides `torch.nn` for building neural networks. The central abstraction is `nn.Module` --- a base class for all neural network components.
+
+```python
+import torch.nn as nn
+
+class SimpleClassifier(nn.Module):
+    def __init__(self, input_size, hidden_size, num_classes):
+        super().__init__()
+
+        # Define layers
+        self.layer1 = nn.Linear(input_size, hidden_size)
+        self.relu = nn.ReLU()
+        self.layer2 = nn.Linear(hidden_size, hidden_size)
+        self.layer3 = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, x):
+        """Define the forward pass."""
+        x = self.layer1(x)     # Linear: z = Wx + b
+        x = self.relu(x)       # Activation
+        x = self.layer2(x)
+        x = self.relu(x)
+        x = self.layer3(x)     # Output logits (raw scores)
+        return x
+
+# Create the model
+model = SimpleClassifier(input_size=784, hidden_size=128, num_classes=10)
+
+# Inspect the model
+print(model)
+print(f"\nTotal parameters: {sum(p.numel() for p in model.parameters()):,}")
+```
+
+```
+SimpleClassifier(
+  (layer1): Linear(in_features=784, out_features=128, bias=True)
+  (relu): ReLU()
+  (layer2): Linear(in_features=128, out_features=128, bias=True)
+  (layer3): Linear(in_features=128, out_features=10, bias=True)
+)
+
+Total parameters: 118,282
+```
+
+### Using nn.Sequential for Simple Architectures
+
+When your network is a simple stack of layers, `nn.Sequential` is more concise:
+
+```python
+model = nn.Sequential(
+    nn.Linear(784, 256),
+    nn.ReLU(),
+    nn.Linear(256, 128),
+    nn.ReLU(),
+    nn.Linear(128, 10)
+)
+
+print(model)
+# Forward pass is automatic: just call model(input)
+dummy_input = torch.randn(32, 784)  # batch of 32
+output = model(dummy_input)
+print(f"Output shape: {output.shape}")  # (32, 10)
+```
+
+## The Complete PyTorch Training Loop
+
+Let's bring everything together with a complete MNIST digit classification example.
+
+### Step 1: Data Loading
+
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+
+# Define transforms: convert images to tensors and normalize
+transform = transforms.Compose([
+    transforms.ToTensor(),                          # [0, 255] -> [0.0, 1.0]
+    transforms.Normalize((0.1307,), (0.3081,))     # MNIST mean and std
+])
+
+# Download and load datasets
+train_dataset = datasets.MNIST(
+    root='./data', train=True, download=True, transform=transform
+)
+test_dataset = datasets.MNIST(
+    root='./data', train=False, download=True, transform=transform
+)
+
+# Create data loaders
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
+
+# Inspect a batch
+images, labels = next(iter(train_loader))
+print(f"Batch images shape: {images.shape}")   # (64, 1, 28, 28)
+print(f"Batch labels shape: {labels.shape}")   # (64,)
+print(f"Label examples: {labels[:5]}")
+```
+
+### Step 2: Define the Model
+
+```python
+class MNISTClassifier(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.flatten = nn.Flatten()           # (batch, 1, 28, 28) -> (batch, 784)
+        self.network = nn.Sequential(
+            nn.Linear(784, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 10)                # 10 classes (digits 0-9)
+        )
+
+    def forward(self, x):
+        x = self.flatten(x)
+        return self.network(x)
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = MNISTClassifier().to(device)
+print(f"Training on: {device}")
+print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
+```
+
+### Step 3: Define Loss and Optimizer
+
+```python
+criterion = nn.CrossEntropyLoss()     # Combines softmax + categorical CE
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+```
+
+<MathNote>
+`nn.CrossEntropyLoss` expects **raw logits** (not softmax probabilities) as input. Internally, it applies `log_softmax` followed by `nll_loss`. This is numerically more stable than applying softmax yourself and then taking the log.
+
+$$\text{CrossEntropyLoss}(\mathbf{z}, y) = -\log\left(\frac{e^{z_y}}{\sum_j e^{z_j}}\right)$$
+
+where $z_y$ is the logit for the true class $y$.
+</MathNote>
+
+### Step 4: The Training Loop
+
+```python
+def train_one_epoch(model, train_loader, criterion, optimizer, device):
+    """Train for one epoch."""
+    model.train()  # Set model to training mode
+    total_loss = 0
+    correct = 0
+    total = 0
+
+    for batch_idx, (images, labels) in enumerate(train_loader):
+        images, labels = images.to(device), labels.to(device)
+
+        # Forward pass
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+
+        # Backward pass
+        optimizer.zero_grad()     # IMPORTANT: zero gradients first!
+        loss.backward()           # Compute gradients
+        optimizer.step()          # Update weights
+
+        # Track metrics
+        total_loss += loss.item()
+        _, predicted = outputs.max(1)
+        correct += predicted.eq(labels).sum().item()
+        total += labels.size(0)
+
+    avg_loss = total_loss / len(train_loader)
+    accuracy = 100.0 * correct / total
+    return avg_loss, accuracy
+
+
+def evaluate(model, test_loader, criterion, device):
+    """Evaluate model on test set."""
+    model.eval()   # Set model to evaluation mode
+    total_loss = 0
+    correct = 0
+    total = 0
+
+    with torch.no_grad():  # No gradient computation needed
+        for images, labels in test_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+
+            total_loss += loss.item()
+            _, predicted = outputs.max(1)
+            correct += predicted.eq(labels).sum().item()
+            total += labels.size(0)
+
+    avg_loss = total_loss / len(test_loader)
+    accuracy = 100.0 * correct / total
+    return avg_loss, accuracy
+
+
+# Train!
+num_epochs = 10
+
+for epoch in range(num_epochs):
+    train_loss, train_acc = train_one_epoch(
+        model, train_loader, criterion, optimizer, device
+    )
+    test_loss, test_acc = evaluate(
+        model, test_loader, criterion, device
+    )
+    print(f"Epoch {epoch+1}/{num_epochs} | "
+          f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.1f}% | "
+          f"Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.1f}%")
+```
+
+```
+Epoch 1/10  | Train Loss: 0.2534, Train Acc: 92.5% | Test Loss: 0.1123, Test Acc: 96.5%
+Epoch 2/10  | Train Loss: 0.1012, Train Acc: 96.9% | Test Loss: 0.0867, Test Acc: 97.3%
+Epoch 3/10  | Train Loss: 0.0689, Train Acc: 97.8% | Test Loss: 0.0754, Test Acc: 97.6%
+...
+Epoch 10/10 | Train Loss: 0.0198, Train Acc: 99.4% | Test Loss: 0.0712, Test Acc: 97.9%
+```
+
+<KeyTakeaway>
+The PyTorch training loop has a fixed structure you will use for every project:
+
+1. `model.train()` --- enable training mode (dropout, batch norm behave differently)
+2. Get a batch from the DataLoader
+3. Move data to the correct device (`images.to(device)`)
+4. Forward pass: `outputs = model(images)`
+5. Compute loss: `loss = criterion(outputs, labels)`
+6. `optimizer.zero_grad()` --- clear accumulated gradients
+7. `loss.backward()` --- compute gradients via autograd
+8. `optimizer.step()` --- update weights
+
+Memorize this pattern. You will write it hundreds of times.
+</KeyTakeaway>
+
+## Saving and Loading Models
+
+### Saving
+
+```python
+# Method 1: Save only the learned parameters (RECOMMENDED)
+torch.save(model.state_dict(), 'mnist_model.pth')
+
+# Method 2: Save the entire model (less portable)
+torch.save(model, 'mnist_model_full.pth')
+```
+
+### Loading
+
+```python
+# Method 1: Load state dict (must recreate model architecture first)
+loaded_model = MNISTClassifier()
+loaded_model.load_state_dict(torch.load('mnist_model.pth'))
+loaded_model.eval()  # Set to evaluation mode
+
+# Method 2: Load entire model
+loaded_model = torch.load('mnist_model_full.pth')
+loaded_model.eval()
+```
+
+### Saving Checkpoints (Best Practice)
+
+```python
+# Save a checkpoint with everything needed to resume training
+checkpoint = {
+    'epoch': epoch,
+    'model_state_dict': model.state_dict(),
+    'optimizer_state_dict': optimizer.state_dict(),
+    'train_loss': train_loss,
+    'test_acc': test_acc,
+}
+torch.save(checkpoint, f'checkpoint_epoch_{epoch}.pth')
+
+# Resume training from checkpoint
+checkpoint = torch.load('checkpoint_epoch_5.pth')
+model.load_state_dict(checkpoint['model_state_dict'])
+optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+start_epoch = checkpoint['epoch'] + 1
+```
+
+<CommonMistake>
+Always call `model.eval()` before inference and `model.train()` before training. Some layers (like Dropout and BatchNorm) behave differently during training vs. evaluation. Forgetting this switch is a subtle bug: your model might perform worse during evaluation than it should, or training may not work correctly after loading a model.
+</CommonMistake>
+
+## Useful PyTorch Patterns
+
+### Custom Dataset
+
+```python
+from torch.utils.data import Dataset
+
+class CustomDataset(Dataset):
+    def __init__(self, features, labels):
+        self.features = torch.FloatTensor(features)
+        self.labels = torch.LongTensor(labels)
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        return self.features[idx], self.labels[idx]
+
+# Usage
+X_train_np = np.random.randn(1000, 20).astype(np.float32)
+y_train_np = np.random.randint(0, 3, 1000)
+
+dataset = CustomDataset(X_train_np, y_train_np)
+loader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+for features, labels in loader:
+    print(f"Batch: features {features.shape}, labels {labels.shape}")
+    break
+```
+
+### Model Summary Helper
+
+```python
+def model_summary(model):
+    """Print a summary of model layers and parameters."""
+    print(f"{'Layer':<30} {'Output Shape':<20} {'Parameters':>12}")
+    print("-" * 62)
+    total_params = 0
+    for name, param in model.named_parameters():
+        print(f"{name:<30} {str(list(param.shape)):<20} {param.numel():>12,}")
+        total_params += param.numel()
+    print("-" * 62)
+    print(f"{'Total':<50} {total_params:>12,}")
+    print(f"{'Trainable':<50} "
+          f"{sum(p.numel() for p in model.parameters() if p.requires_grad):>12,}")
+
+model_summary(model)
+```
+
+```
+Layer                          Output Shape         Parameters
+--------------------------------------------------------------
+network.0.weight               [256, 784]             200,704
+network.0.bias                 [256]                      256
+network.2.weight               [128, 256]              32,768
+network.2.bias                 [128]                      128
+network.4.weight               [10, 128]                1,280
+network.4.bias                 [10]                        10
+--------------------------------------------------------------
+Total                                                 235,146
+Trainable                                             235,146
+```
+
+<WhyThisMatters>
+PyTorch's design philosophy is "define-by-run" --- the computation graph is built dynamically as your code executes. This means you can use standard Python control flow (if statements, loops) inside your models, making it natural to prototype and debug. This is in contrast to TensorFlow 1.x's "define-then-run" approach, which required building a static graph before execution. This flexibility is why PyTorch dominates in research.
+</WhyThisMatters>
+
+## What's Next
+
+You now have the tools to build and train feedforward neural networks in PyTorch. But feedforward (fully connected) networks have a major limitation: they treat every input feature independently and do not exploit spatial structure. In the next lesson, we will learn about **Convolutional Neural Networks (CNNs)** --- architectures specifically designed to work with images by detecting spatial patterns like edges, textures, and shapes.

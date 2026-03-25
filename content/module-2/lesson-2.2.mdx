@@ -1,0 +1,491 @@
+---
+module: 2
+lesson: 2
+title: "Linear Regression & the Cost Function"
+description: "Build linear regression from the ground up, understand the MSE cost function, derive gradient descent, and learn why feature scaling matters."
+prerequisites: ["2.1"]
+estimatedMinutes: 55
+---
+
+# Linear Regression & the Cost Function
+
+Linear regression is the "Hello, World!" of machine learning. It is simple enough to understand completely — math, code, and intuition — yet powerful enough to solve real problems. More importantly, the ideas you learn here (hypothesis function, cost function, gradient descent) appear in nearly every ML algorithm.
+
+<WhyThisMatters>
+Linear regression is not just a toy. It is used daily in finance, economics, medicine, and engineering. And the optimization approach we develop here — gradient descent on a cost function — is the exact same technique used to train neural networks with billions of parameters.
+</WhyThisMatters>
+
+---
+
+## The Hypothesis Function
+
+Given a single feature $x$, linear regression fits a line:
+
+$$h_\theta(x) = \theta_0 + \theta_1 x$$
+
+where $\theta_0$ is the **intercept** (bias) and $\theta_1$ is the **slope** (weight).
+
+For multiple features $x_1, x_2, \ldots, x_n$, this generalizes to:
+
+$$h_\theta(\mathbf{x}) = \theta_0 + \theta_1 x_1 + \theta_2 x_2 + \cdots + \theta_n x_n$$
+
+<MathNote>
+Using a bias trick — prepend a $1$ to every feature vector — we can write this compactly as a dot product:
+
+$$h_\theta(\mathbf{x}) = \boldsymbol{\theta}^T \mathbf{x}$$
+
+where $\boldsymbol{\theta} = [\theta_0, \theta_1, \ldots, \theta_n]^T$ and $\mathbf{x} = [1, x_1, x_2, \ldots, x_n]^T$.
+
+For the entire training set of $m$ samples, stacked into a matrix $X$ of shape $(m, n+1)$:
+
+$$\hat{\mathbf{y}} = X \boldsymbol{\theta}$$
+
+This single matrix multiplication computes all $m$ predictions at once.
+</MathNote>
+
+```python
+import numpy as np
+
+# Simple example: 5 samples, 2 features
+X_raw = np.array([
+    [1400, 3],
+    [1600, 3],
+    [1700, 4],
+    [1875, 4],
+    [2200, 5],
+], dtype=float)
+
+# Add bias column of ones
+X = np.column_stack([np.ones(X_raw.shape[0]), X_raw])
+print("X with bias column:")
+print(X)
+print(f"Shape: {X.shape}")  # (5, 3)
+
+# Initialize parameters randomly
+np.random.seed(42)
+theta = np.random.randn(3)
+
+# Make predictions via matrix multiplication
+y_pred = X @ theta
+print(f"\nPredictions: {y_pred.round(1)}")
+```
+
+---
+
+## The Cost Function: Mean Squared Error
+
+How do we know if our parameters $\boldsymbol{\theta}$ are good? We need a **cost function** (also called loss function or objective function) that measures how far our predictions are from the true values.
+
+The most common choice for regression is **Mean Squared Error (MSE)**:
+
+$$J(\boldsymbol{\theta}) = \frac{1}{2m} \sum_{i=1}^{m} \left( h_\theta(\mathbf{x}^{(i)}) - y^{(i)} \right)^2$$
+
+<MathNote>
+Why the factor of $\frac{1}{2}$? It is a convenience — when we take the derivative, the $2$ from the power rule cancels with the $\frac{1}{2}$, giving cleaner gradients. This does not change the location of the minimum.
+
+In vector notation:
+
+$$J(\boldsymbol{\theta}) = \frac{1}{2m} (\hat{\mathbf{y}} - \mathbf{y})^T (\hat{\mathbf{y}} - \mathbf{y})$$
+
+where $\hat{\mathbf{y}} = X\boldsymbol{\theta}$.
+</MathNote>
+
+```python
+def compute_cost(X, y, theta):
+    """Compute the MSE cost function."""
+    m = len(y)
+    predictions = X @ theta
+    errors = predictions - y
+    cost = (1 / (2 * m)) * np.sum(errors ** 2)
+    return cost
+
+# True labels (house prices in thousands)
+y = np.array([245, 312, 279, 308, 450], dtype=float)
+
+# Cost with random parameters (should be high)
+cost_random = compute_cost(X, y, theta)
+print(f"Cost with random theta: {cost_random:.2f}")
+```
+
+The cost function $J(\boldsymbol{\theta})$ is a surface over the parameter space. For two parameters $(\theta_0, \theta_1)$, it forms a bowl-shaped surface. Our goal: find the $\boldsymbol{\theta}$ at the bottom of this bowl.
+
+---
+
+## Gradient Descent
+
+Gradient descent is an iterative optimization algorithm that repeatedly takes steps in the direction of steepest descent:
+
+$$\boldsymbol{\theta} \leftarrow \boldsymbol{\theta} - \alpha \nabla_\theta J(\boldsymbol{\theta})$$
+
+where $\alpha$ is the **learning rate** — a small positive number controlling step size.
+
+### Computing the Gradient
+
+The partial derivative of $J$ with respect to $\theta_j$ is:
+
+$$\frac{\partial J}{\partial \theta_j} = \frac{1}{m} \sum_{i=1}^{m} \left( h_\theta(\mathbf{x}^{(i)}) - y^{(i)} \right) x_j^{(i)}$$
+
+In vectorized form:
+
+$$\nabla_\theta J = \frac{1}{m} X^T (X\boldsymbol{\theta} - \mathbf{y})$$
+
+```python
+def compute_gradient(X, y, theta):
+    """Compute the gradient of the cost function."""
+    m = len(y)
+    predictions = X @ theta
+    errors = predictions - y
+    gradient = (1 / m) * (X.T @ errors)
+    return gradient
+
+# Test the gradient
+grad = compute_gradient(X, y, theta)
+print(f"Gradient shape: {grad.shape}")
+print(f"Gradient values: {grad.round(4)}")
+```
+
+### The Full Algorithm
+
+```python
+def gradient_descent(X, y, theta, alpha, num_iters):
+    """
+    Run gradient descent to minimize the cost function.
+
+    Parameters:
+        X: feature matrix with bias column, shape (m, n+1)
+        y: target vector, shape (m,)
+        theta: initial parameters, shape (n+1,)
+        alpha: learning rate
+        num_iters: number of iterations
+
+    Returns:
+        theta: optimized parameters
+        cost_history: cost at each iteration
+    """
+    m = len(y)
+    cost_history = []
+
+    for i in range(num_iters):
+        # Compute gradient
+        gradient = compute_gradient(X, y, theta)
+
+        # Update parameters
+        theta = theta - alpha * gradient
+
+        # Record cost
+        cost_history.append(compute_cost(X, y, theta))
+
+    return theta, cost_history
+```
+
+<CommonMistake>
+A common bug is updating parameters one at a time inside the loop — computing the gradient for $\theta_0$, updating $\theta_0$, then computing the gradient for $\theta_1$ using the *already-updated* $\theta_0$. This is incorrect. All parameters must be updated **simultaneously** using gradients computed from the same $\boldsymbol{\theta}$. The vectorized form `theta = theta - alpha * gradient` handles this correctly.
+</CommonMistake>
+
+### Choosing the Learning Rate
+
+The learning rate $\alpha$ is critical:
+
+- **Too small**: convergence is painfully slow (thousands of iterations)
+- **Too large**: the algorithm overshoots the minimum and may diverge (cost increases)
+- **Just right**: smooth, rapid convergence
+
+```python
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+learning_rates = [0.0000001, 0.0000005, 0.000005]
+titles = ["Too Small", "Good", "Too Large"]
+
+for ax, lr, title in zip(axes, learning_rates, titles):
+    theta_init = np.random.randn(3)
+    _, history = gradient_descent(X, y, theta_init.copy(), lr, 200)
+
+    ax.plot(history)
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Cost J")
+    ax.set_title(f"lr = {lr} ({title})")
+    ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+A practical strategy: start with $\alpha = 0.01$ and try values on a logarithmic scale: $0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1.0$.
+
+---
+
+## The Normal Equation: A Closed-Form Solution
+
+For linear regression specifically, we can solve for the optimal $\boldsymbol{\theta}$ analytically by setting the gradient to zero:
+
+$$\boldsymbol{\theta}^* = (X^T X)^{-1} X^T \mathbf{y}$$
+
+```python
+def normal_equation(X, y):
+    """Solve for optimal theta using the normal equation."""
+    return np.linalg.pinv(X.T @ X) @ (X.T @ y)
+
+theta_optimal = normal_equation(X, y)
+print(f"Optimal theta: {theta_optimal.round(4)}")
+print(f"Cost at optimum: {compute_cost(X, y, theta_optimal):.4f}")
+```
+
+| Normal Equation | Gradient Descent |
+|----------------|-----------------|
+| No learning rate to choose | Must choose $\alpha$ |
+| No iterations needed | Must choose number of iterations |
+| Slow when $n$ is large ($O(n^3)$ for matrix inverse) | Works well even with large $n$ |
+| Only works for linear regression | Works for any differentiable cost function |
+
+<KeyTakeaway>
+For small datasets (fewer than ~10,000 features), the normal equation is fast and exact. For large datasets or non-linear models, gradient descent is the only practical option — and it is what powers all of deep learning.
+</KeyTakeaway>
+
+---
+
+## Feature Scaling and Normalization
+
+When features have vastly different scales (e.g., square footage in thousands vs. number of bedrooms as single digits), gradient descent struggles. The cost surface becomes an elongated ellipse, and the gradient points mostly toward the large-scale feature, causing slow zigzagging convergence.
+
+### Standardization (Z-score Normalization)
+
+Transform each feature to have zero mean and unit variance:
+
+$$x_j' = \frac{x_j - \mu_j}{\sigma_j}$$
+
+```python
+from sklearn.preprocessing import StandardScaler
+
+scaler = StandardScaler()
+X_raw_scaled = scaler.fit_transform(X_raw)
+
+print("Before scaling:")
+print(f"  sq_ft  mean={X_raw[:, 0].mean():.0f}, std={X_raw[:, 0].std():.0f}")
+print(f"  beds   mean={X_raw[:, 1].mean():.1f}, std={X_raw[:, 1].std():.2f}")
+
+print("\nAfter scaling:")
+print(f"  sq_ft  mean={X_raw_scaled[:, 0].mean():.2f}, std={X_raw_scaled[:, 0].std():.2f}")
+print(f"  beds   mean={X_raw_scaled[:, 1].mean():.2f}, std={X_raw_scaled[:, 1].std():.2f}")
+```
+
+### Min-Max Normalization
+
+Scale each feature to the range $[0, 1]$:
+
+$$x_j' = \frac{x_j - \min(x_j)}{\max(x_j) - \min(x_j)}$$
+
+```python
+from sklearn.preprocessing import MinMaxScaler
+
+minmax = MinMaxScaler()
+X_raw_minmax = minmax.fit_transform(X_raw)
+print("Min-max scaled (first 3 rows):")
+print(X_raw_minmax[:3].round(3))
+```
+
+<CommonMistake>
+Always fit the scaler on the **training set only**, then transform both training and test sets using the same scaler. If you fit on the full dataset before splitting, information from the test set leaks into preprocessing, giving optimistically biased results.
+
+```python
+# WRONG: fitting on all data
+scaler.fit(X_all)
+
+# RIGHT: fit on train, transform both
+scaler.fit(X_train)
+X_train_scaled = scaler.transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+```
+</CommonMistake>
+
+### Impact on Gradient Descent
+
+```python
+# Compare convergence with and without scaling
+# Without scaling
+X_no_scale = np.column_stack([np.ones(X_raw.shape[0]), X_raw])
+theta_init = np.zeros(3)
+_, history_no_scale = gradient_descent(X_no_scale, y, theta_init.copy(), 1e-9, 500)
+
+# With scaling
+X_scaled = np.column_stack([np.ones(X_raw_scaled.shape[0]), X_raw_scaled])
+_, history_scaled = gradient_descent(X_scaled, y, theta_init.copy(), 0.1, 500)
+
+plt.figure(figsize=(10, 4))
+plt.subplot(1, 2, 1)
+plt.plot(history_no_scale)
+plt.title("Without Feature Scaling")
+plt.xlabel("Iteration")
+plt.ylabel("Cost")
+
+plt.subplot(1, 2, 2)
+plt.plot(history_scaled)
+plt.title("With Feature Scaling")
+plt.xlabel("Iteration")
+plt.ylabel("Cost")
+
+plt.tight_layout()
+plt.show()
+```
+
+---
+
+## Polynomial Regression
+
+What if the relationship between features and target is not linear? One approach is to create polynomial features and still use linear regression.
+
+For a single feature $x$, a degree-$d$ polynomial model is:
+
+$$h_\theta(x) = \theta_0 + \theta_1 x + \theta_2 x^2 + \cdots + \theta_d x^d$$
+
+This is still **linear** regression — it is linear in the parameters $\boldsymbol{\theta}$, even though the hypothesis is a polynomial in $x$.
+
+```python
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.metrics import mean_squared_error
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Generate nonlinear data
+np.random.seed(42)
+X_data = np.sort(np.random.uniform(0, 5, 40)).reshape(-1, 1)
+y_data = 0.5 * X_data.ravel()**2 - 2 * X_data.ravel() + 3 + np.random.randn(40) * 1.5
+
+# Fit models of different degrees
+X_plot = np.linspace(0, 5, 100).reshape(-1, 1)
+
+plt.figure(figsize=(12, 5))
+for degree in [1, 2, 10]:
+    model = make_pipeline(PolynomialFeatures(degree), LinearRegression())
+    model.fit(X_data, y_data)
+    y_plot = model.predict(X_plot)
+
+    train_mse = mean_squared_error(y_data, model.predict(X_data))
+    plt.plot(X_plot, y_plot, label=f"Degree {degree} (MSE={train_mse:.2f})")
+
+plt.scatter(X_data, y_data, color="black", s=20, zorder=5, label="Data")
+plt.xlabel("x")
+plt.ylabel("y")
+plt.title("Polynomial Regression: Underfitting vs. Good Fit vs. Overfitting")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()
+```
+
+<MathNote>
+For degree-2 polynomial regression with two original features $x_1$ and $x_2$, the expanded feature set is:
+
+$$[1, x_1, x_2, x_1^2, x_1 x_2, x_2^2]$$
+
+The number of features grows combinatorially: for degree $d$ with $n$ original features, there are $\binom{n+d}{d}$ terms. For $n=10, d=3$, that is 286 features. Feature scaling becomes even more critical with polynomial features because powers of large numbers explode.
+</MathNote>
+
+---
+
+## Regularization: A Preview
+
+Higher-degree polynomials can overfit. **Regularization** adds a penalty term to the cost function that discourages large parameter values:
+
+**Ridge (L2) regression:**
+
+$$J(\boldsymbol{\theta}) = \frac{1}{2m} \sum_{i=1}^{m} (h_\theta(\mathbf{x}^{(i)}) - y^{(i)})^2 + \lambda \sum_{j=1}^{n} \theta_j^2$$
+
+The hyperparameter $\lambda$ controls the tradeoff: larger $\lambda$ means simpler models (smaller weights), at the cost of potentially higher bias.
+
+```python
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
+from sklearn.pipeline import make_pipeline
+
+# High-degree polynomial with regularization
+model_noreg = make_pipeline(
+    PolynomialFeatures(10), StandardScaler(), LinearRegression()
+)
+model_reg = make_pipeline(
+    PolynomialFeatures(10), StandardScaler(), Ridge(alpha=1.0)
+)
+
+model_noreg.fit(X_data, y_data)
+model_reg.fit(X_data, y_data)
+
+plt.figure(figsize=(10, 5))
+plt.scatter(X_data, y_data, color="black", s=20, label="Data")
+plt.plot(X_plot, model_noreg.predict(X_plot), label="Degree 10, no reg", linewidth=2)
+plt.plot(X_plot, model_reg.predict(X_plot), label="Degree 10, Ridge", linewidth=2)
+plt.legend()
+plt.title("Effect of Regularization on a High-Degree Polynomial")
+plt.grid(True, alpha=0.3)
+plt.show()
+```
+
+---
+
+## Linear Regression with Scikit-Learn
+
+In practice, you use scikit-learn rather than implementing from scratch. But having built it yourself, you now understand what happens inside.
+
+```python
+from sklearn.datasets import fetch_california_housing
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import mean_squared_error, r2_score
+import numpy as np
+
+# Load a real dataset
+housing = fetch_california_housing()
+X, y = housing.data, housing.target
+print(f"Features: {housing.feature_names}")
+print(f"Shape: {X.shape}")
+
+# Split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# Build pipeline
+pipeline = Pipeline([
+    ("scaler", StandardScaler()),
+    ("model", LinearRegression()),
+])
+
+# Cross-validate
+cv_scores = cross_val_score(pipeline, X_train, y_train, cv=5, scoring="r2")
+print(f"\nCV R^2: {cv_scores.mean():.3f} +/- {cv_scores.std():.3f}")
+
+# Final evaluation
+pipeline.fit(X_train, y_train)
+y_pred = pipeline.predict(X_test)
+print(f"Test R^2: {r2_score(y_test, y_pred):.3f}")
+print(f"Test RMSE: {np.sqrt(mean_squared_error(y_test, y_pred)):.3f}")
+
+# Inspect learned coefficients
+model = pipeline.named_steps["model"]
+for name, coef in zip(housing.feature_names, model.coef_):
+    print(f"  {name:15s}: {coef:+.4f}")
+print(f"  {'Intercept':15s}: {model.intercept_:+.4f}")
+```
+
+<KeyTakeaway>
+Linear regression with gradient descent teaches you three foundational ideas: (1) define a differentiable cost function, (2) compute its gradient, and (3) iteratively update parameters to minimize cost. Every model in the rest of this course — logistic regression, neural networks, even transformers — follows this exact pattern. The algorithm changes; the framework stays the same.
+</KeyTakeaway>
+
+---
+
+## Summary
+
+| Concept | Formula / Key Idea |
+|---------|--------------------|
+| Hypothesis | $h_\theta(\mathbf{x}) = \boldsymbol{\theta}^T \mathbf{x}$ |
+| MSE Cost | $J(\boldsymbol{\theta}) = \frac{1}{2m} \|\|X\boldsymbol{\theta} - \mathbf{y}\|\|^2$ |
+| Gradient | $\nabla J = \frac{1}{m} X^T(X\boldsymbol{\theta} - \mathbf{y})$ |
+| Update rule | $\boldsymbol{\theta} \leftarrow \boldsymbol{\theta} - \alpha \nabla J$ |
+| Normal equation | $\boldsymbol{\theta}^* = (X^T X)^{-1} X^T \mathbf{y}$ |
+| Feature scaling | Standardize to zero mean, unit variance |
+| Polynomial regression | Create polynomial features, still linear in $\boldsymbol{\theta}$ |
+| Regularization | Add $\lambda \sum \theta_j^2$ to penalize complexity |
+
+Next up: we adapt these ideas to classification with logistic regression.

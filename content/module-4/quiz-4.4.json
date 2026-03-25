@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "What is the pretraining objective for decoder-only transformer LLMs like GPT and Claude?",
+      "options": [
+        "Predicting randomly masked tokens in the middle of a sentence (like BERT)",
+        "Classifying documents into predefined categories",
+        "Predicting the next token given all preceding tokens (autoregressive language modeling)",
+        "Translating text between two languages"
+      ],
+      "correct": "C",
+      "explanation": "Decoder-only LLMs are trained with autoregressive language modeling: given tokens x_1 through x_{t-1}, predict x_t. This is applied to every position simultaneously using causal masking. Despite its simplicity, this objective at massive scale produces models with broad language understanding and generation capabilities."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "Why do modern LLMs use subword tokenization (like BPE) instead of word-level tokenization?",
+      "options": [
+        "Subword tokenization produces shorter sequences, making transformers faster",
+        "It balances vocabulary size and sequence length while eliminating the out-of-vocabulary problem -- any text can be represented as a sequence of subword tokens",
+        "Word-level tokenization is not supported by PyTorch",
+        "Subword tokenization always produces exactly one token per word"
+      ],
+      "correct": "B",
+      "explanation": "Word-level tokenization requires a massive vocabulary and cannot handle unseen words. Character-level tokenization creates very long sequences (expensive for O(n^2) attention). BPE and similar subword methods find a middle ground: common words stay as single tokens while rare words are split into frequent subword pieces, ensuring any text can be tokenized."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "What do scaling laws tell us about LLM training?",
+      "options": [
+        "Larger models always perform better regardless of training data size",
+        "Model performance improves predictably with more parameters and data, following power laws, and model size and data size should be scaled together",
+        "There is a fixed maximum model size beyond which no improvement is possible",
+        "Scaling only affects training speed, not model quality"
+      ],
+      "correct": "B",
+      "explanation": "Scaling laws (Kaplan et al., Hoffmann et al.) show that loss decreases as a power law in both model size N and data size D. Critically, the Chinchilla scaling laws showed that compute-optimal training requires scaling both together -- roughly 20 tokens per parameter. This means a 10B parameter model should see about 200B tokens."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What is the purpose of RLHF (Reinforcement Learning from Human Feedback)?",
+      "options": [
+        "To teach the model basic language understanding",
+        "To reduce the model's parameter count for faster inference",
+        "To align the model's behavior with human preferences, making it more helpful and less harmful, beyond what supervised fine-tuning alone achieves",
+        "To enable the model to process images in addition to text"
+      ],
+      "correct": "C",
+      "explanation": "After pretraining (which produces a raw text predictor) and SFT (which teaches assistant-like formatting), RLHF further refines the model by training it to produce outputs that humans prefer. A reward model learned from human comparisons guides the optimization, pushing the model toward responses that are more helpful, accurate, and safe."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "How does LoRA (Low-Rank Adaptation) make fine-tuning more efficient?",
+      "options": [
+        "It removes unnecessary layers from the model",
+        "It freezes the original model weights and adds small trainable low-rank matrices (with rank r << d), training less than 1% of total parameters",
+        "It converts the model from float32 to int8 precision",
+        "It fine-tunes only the embedding layer and output layer"
+      ],
+      "correct": "B",
+      "explanation": "LoRA freezes all original weights and injects trainable low-rank decomposition matrices (W = W_0 + BA where B is d x r and A is r x d, with r typically 4-64). This means only a tiny fraction of parameters are trainable, dramatically reducing memory requirements and enabling fine-tuning on consumer GPUs. The adapter weights are also very small to store and can be swapped efficiently."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "What effect does lowering the temperature parameter have during LLM inference?",
+      "options": [
+        "It makes the output longer",
+        "It makes the probability distribution sharper, favoring higher-probability tokens and producing more deterministic, focused output",
+        "It increases the vocabulary size considered",
+        "It speeds up token generation"
+      ],
+      "correct": "B",
+      "explanation": "Temperature scales the logits before softmax: P(x_i) = exp(z_i/T) / sum(exp(z_j/T)). Lower T makes the distribution peakier -- the highest-probability token gets an even higher probability relative to others. At T->0 (greedy decoding), the model always picks the most likely token, producing deterministic but potentially repetitive output."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "How does top-p (nucleus) sampling differ from top-k sampling?",
+      "options": [
+        "Top-p is faster to compute than top-k",
+        "Top-p keeps a fixed number of tokens while top-k uses a probability threshold",
+        "Top-p keeps the smallest set of tokens whose cumulative probability exceeds p, adapting the number of candidates based on the model's confidence",
+        "Top-p only works with temperature=1.0"
+      ],
+      "correct": "C",
+      "explanation": "Top-k always considers exactly k tokens regardless of their probability distribution. Top-p adapts: when the model is confident (one token has 95% probability), it might consider only 1-2 tokens; when uncertain, it might consider hundreds. This adaptive behavior makes top-p generally more robust across different contexts."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "What is the KV cache optimization in transformer inference?",
+      "options": [
+        "It caches the training data to avoid re-reading from disk",
+        "It stores the key and value matrices from previous positions so they don't need to be recomputed when generating each new token",
+        "It compresses the model weights to use less memory",
+        "It pre-computes all possible next tokens"
+      ],
+      "correct": "B",
+      "explanation": "During autoregressive generation, each new token needs to attend to all previous tokens. Without caching, this requires recomputing Q, K, V for ALL positions at every step. The KV cache stores the K and V matrices from all previous positions, so only the new token's Q, K, V need to be computed. This dramatically reduces computation at the cost of memory that grows linearly with sequence length."
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "A node in a decision tree contains 50 samples: 25 class A and 25 class B. What is its Gini impurity?",
+      "options": [
+        "0.0",
+        "0.25",
+        "0.5",
+        "1.0"
+      ],
+      "correct": "C",
+      "explanation": "Gini = 1 - (p_A^2 + p_B^2) = 1 - (0.5^2 + 0.5^2) = 1 - (0.25 + 0.25) = 0.5. This is the maximum Gini impurity for a binary classification problem, indicating the node is maximally impure (equal mix of both classes)."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "What is the primary difference between bagging and boosting?",
+      "options": [
+        "Bagging uses decision trees while boosting uses linear models",
+        "Bagging builds trees independently in parallel, boosting builds them sequentially to correct errors",
+        "Bagging reduces bias, boosting reduces variance",
+        "Bagging requires feature scaling, boosting does not"
+      ],
+      "correct": "B",
+      "explanation": "Bagging (bootstrap aggregating) builds each tree independently on a random bootstrap sample, which primarily reduces variance. Boosting builds trees sequentially, where each new tree focuses on the mistakes of the previous ensemble, which reduces both bias and variance."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "In a random forest, why does the algorithm consider only a random subset of features at each split?",
+      "options": [
+        "To speed up training by reducing the number of computations",
+        "To decorrelate the trees, which makes the ensemble's variance reduction more effective",
+        "To prevent the tree from growing too deep",
+        "To ensure all features are used equally across the forest"
+      ],
+      "correct": "B",
+      "explanation": "If every tree considers all features, they would all tend to split on the same strong features, making the trees highly correlated. Correlated predictions average less effectively. By forcing each split to consider a random subset, the trees become decorrelated, and averaging decorrelated predictions reduces variance much more effectively."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "Which hyperparameter is LEAST effective at preventing overfitting in a decision tree?",
+      "options": [
+        "max_depth",
+        "min_samples_leaf",
+        "criterion (Gini vs entropy)",
+        "max_leaf_nodes"
+      ],
+      "correct": "C",
+      "explanation": "The choice between Gini impurity and entropy as the splitting criterion has minimal effect on overfitting — both produce very similar trees. In contrast, max_depth, min_samples_leaf, and max_leaf_nodes directly control tree complexity and are the primary tools for preventing overfitting."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "In gradient boosting, what does each new tree fit to?",
+      "options": [
+        "The original training labels",
+        "The residual errors (negative gradient) of the current ensemble's predictions",
+        "A random subset of the training data",
+        "The predictions of the previous tree"
+      ],
+      "correct": "B",
+      "explanation": "In gradient boosting, each new tree is trained to predict the residual errors of the current ensemble. These residuals are the negative gradient of the loss function with respect to the current predictions. By adding this correction tree to the ensemble, the overall predictions improve incrementally."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "An unrestricted decision tree achieves 100% training accuracy. What does this tell you?",
+      "options": [
+        "The model is an excellent predictor",
+        "The model has likely memorized the training data and may perform poorly on new data",
+        "The dataset has no noise",
+        "The features are perfectly predictive of the target"
+      ],
+      "correct": "B",
+      "explanation": "An unrestricted decision tree can always achieve 100% training accuracy by growing until every leaf contains samples of a single class — even if it means creating one leaf per training sample. This is extreme overfitting (memorization), and the model will likely generalize poorly to unseen data."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "What is a key advantage of tree-based models over linear models?",
+      "options": [
+        "They always achieve higher accuracy",
+        "They naturally handle nonlinear relationships without feature engineering",
+        "They are always faster to train",
+        "They require less data to achieve good performance"
+      ],
+      "correct": "B",
+      "explanation": "Decision trees create nonlinear decision boundaries through recursive splitting, capturing complex interactions between features without manual feature engineering (like creating polynomial or interaction terms). Linear models require explicit feature transformation to model nonlinearity."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "Why does increasing the number of trees in a random forest generally NOT lead to overfitting?",
+      "options": [
+        "Each tree uses only a small subset of the data",
+        "The averaging of many decorrelated trees reduces variance without increasing bias",
+        "More trees automatically increase regularization",
+        "Scikit-learn applies early stopping to prevent overfitting"
+      ],
+      "correct": "B",
+      "explanation": "Adding more trees to a random forest is like averaging more independent estimates — the variance decreases while the bias stays the same. Unlike boosting, where each tree depends on previous ones and too many iterations can overfit, bagged trees are independent and their average converges to a stable prediction."
+    }
+  ]
+}

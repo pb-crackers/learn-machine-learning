@@ -1,0 +1,412 @@
+---
+module: 4
+lesson: 1
+title: "Text Representation & Classical NLP"
+description: "Learn why text is challenging for machine learning, and explore the evolution from bag-of-words to TF-IDF to dense word embeddings like Word2Vec and GloVe."
+prerequisites: ["3.5"]
+estimatedMinutes: 50
+---
+
+# Text Representation & Classical NLP
+
+Every machine learning model you have seen so far operates on numbers -- vectors of floating-point values. Images are already numeric (pixel intensities), tabular data has numeric columns, and even categorical features can be one-hot encoded in a straightforward way. Text is different. A sentence is a variable-length sequence of discrete symbols drawn from a vocabulary that can easily exceed 100,000 words. Before we can do *anything* with text in ML, we need a principled way to turn words and documents into numbers.
+
+This lesson traces the evolution of text representations, from the simplest counting methods all the way to dense embeddings that capture meaning.
+
+<WhyThisMatters>
+If you work with chatbots, search engines, or any AI product that handles language, every single request starts by converting text into a numeric representation. Understanding how that conversion works -- and what information it preserves or discards -- is the foundation of everything else in NLP.
+</WhyThisMatters>
+
+## Why Text Is Hard for Computers
+
+Consider the sentence: *"The bank by the river was steep."* Now consider: *"I went to the bank to deposit money."*
+
+The word "bank" has completely different meanings depending on context. This is called **polysemy**, and it is just the beginning of the challenges:
+
+1. **Variable length** -- sentences and documents can be 3 words or 3,000 words.
+2. **Discrete symbols** -- unlike pixel intensities, there is no natural ordering where "cat" > "dog" makes sense.
+3. **Huge vocabulary** -- English alone has hundreds of thousands of words, plus misspellings, slang, and proper nouns.
+4. **Synonymy** -- "happy", "glad", "joyful", and "elated" mean roughly the same thing but are completely different strings.
+5. **Compositionality** -- the meaning of a phrase is not just the sum of its word meanings ("hot dog" is not a warm canine).
+6. **Long-range dependencies** -- in *"The trophy didn't fit in the suitcase because it was too big"*, "it" refers to the trophy, not the suitcase. Resolving that requires understanding the whole sentence.
+
+Our goal: find representations that let models handle these challenges, or at least some of them.
+
+## Tokenization: The First Step
+
+Before any representation, we must split raw text into units called **tokens**. The simplest approach splits on whitespace and punctuation:
+
+```python
+import re
+
+def simple_tokenize(text):
+    """Split on non-alphanumeric characters, lowercase everything."""
+    return re.findall(r'[a-z]+', text.lower())
+
+tokens = simple_tokenize("The Bank by the River was steep!")
+print(tokens)
+# ['the', 'bank', 'by', 'the', 'river', 'was', 'steep']
+```
+
+More sophisticated tokenizers handle contractions ("don't" -> "do", "n't"), hyphenated words, and special characters. We will revisit subword tokenization (BPE) in Lesson 4.4 when we discuss large language models.
+
+## Bag of Words (BoW)
+
+The simplest document representation ignores word order entirely and just counts how many times each word appears.
+
+### Building a BoW Representation
+
+```python
+from collections import Counter
+
+def bag_of_words(documents):
+    """Return a vocabulary and a count matrix."""
+    # Build vocabulary from all documents
+    vocab = sorted(set(word for doc in documents for word in doc))
+    word_to_idx = {w: i for i, w in enumerate(vocab)}
+
+    # Build count vectors
+    vectors = []
+    for doc in documents:
+        counts = Counter(doc)
+        vec = [counts.get(w, 0) for w in vocab]
+        vectors.append(vec)
+    return vocab, vectors
+
+docs = [
+    ["the", "cat", "sat", "on", "the", "mat"],
+    ["the", "dog", "sat", "on", "the", "log"],
+    ["the", "cat", "chased", "the", "dog"],
+]
+
+vocab, vectors = bag_of_words(docs)
+print(f"Vocabulary ({len(vocab)} words): {vocab}")
+for i, v in enumerate(vectors):
+    print(f"  Doc {i}: {v}")
+```
+
+Output:
+```
+Vocabulary (7 words): ['cat', 'chased', 'dog', 'log', 'mat', 'on', 'sat', 'the']
+  Doc 0: [1, 0, 0, 0, 1, 1, 1, 2]
+  Doc 1: [0, 0, 1, 1, 0, 1, 1, 2]
+  Doc 2: [1, 1, 1, 0, 0, 0, 0, 2]
+```
+
+### Problems with Bag of Words
+
+1. **Order is lost** -- "dog bites man" and "man bites dog" have identical BoW vectors.
+2. **High dimensionality** -- with a vocabulary of $V$ words, each document is a vector in $\mathbb{R}^V$. Real corpora easily have $V > 100{,}000$.
+3. **Sparsity** -- most documents use a tiny fraction of the vocabulary, so vectors are almost all zeros.
+4. **No semantics** -- "happy" and "joyful" are as far apart as "happy" and "volcano".
+5. **Common words dominate** -- "the", "is", "a" appear everywhere and drown out informative words.
+
+<CommonMistake>
+A common beginner mistake is using raw bag-of-words counts directly as features for a model. Words like "the" and "is" will appear thousands of times and dominate the representation, even though they carry almost no meaning. Always apply some form of normalization or weighting -- TF-IDF is the classic solution.
+</CommonMistake>
+
+## TF-IDF: Weighting Words by Importance
+
+**Term Frequency-Inverse Document Frequency** addresses the common-words problem by down-weighting words that appear in many documents.
+
+<MathNote>
+For a term $t$ in document $d$ from corpus $D$:
+
+$$\text{TF}(t, d) = \frac{\text{count of } t \text{ in } d}{\text{total terms in } d}$$
+
+$$\text{IDF}(t, D) = \log \frac{|D|}{|\{d \in D : t \in d\}|}$$
+
+$$\text{TF-IDF}(t, d, D) = \text{TF}(t, d) \times \text{IDF}(t, D)$$
+
+A word that appears in *every* document gets $\text{IDF} = \log(1) = 0$, effectively zeroing it out. A rare but locally frequent word gets a high score.
+</MathNote>
+
+### TF-IDF in Practice
+
+```python
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+corpus = [
+    "The cat sat on the mat",
+    "The dog sat on the log",
+    "The cat chased the dog",
+]
+
+vectorizer = TfidfVectorizer()
+tfidf_matrix = vectorizer.fit_transform(corpus)
+
+print("Vocabulary:", vectorizer.get_feature_names_out())
+print("\nTF-IDF matrix (dense):")
+print(tfidf_matrix.toarray().round(3))
+```
+
+Notice how "the" gets a low weight (it appears in all documents), while "mat", "log", and "chased" get higher weights because they are distinctive.
+
+### Cosine Similarity
+
+With TF-IDF vectors, we measure document similarity using cosine similarity rather than Euclidean distance, because document length varies:
+
+$$\text{cos}(\mathbf{a}, \mathbf{b}) = \frac{\mathbf{a} \cdot \mathbf{b}}{\|\mathbf{a}\| \, \|\mathbf{b}\|}$$
+
+```python
+from sklearn.metrics.pairwise import cosine_similarity
+
+similarities = cosine_similarity(tfidf_matrix)
+print("Pairwise cosine similarities:")
+print(similarities.round(3))
+```
+
+Documents 0 and 1 (both about an animal sitting on something) will be more similar to each other than to document 2.
+
+### Limitations of TF-IDF
+
+TF-IDF is a huge improvement over raw counts, but it still treats every word as an independent dimension. "happy" and "joyful" have zero similarity in TF-IDF space because they occupy orthogonal dimensions. We need representations that capture *meaning*.
+
+## Word Embeddings: Dense Semantic Vectors
+
+The breakthrough idea behind word embeddings is simple but powerful:
+
+> **You shall know a word by the company it keeps.** -- J.R. Firth, 1957
+
+Words that appear in similar contexts should have similar representations. If "king" and "queen" tend to appear near words like "throne", "royal", "crown", then their vectors should be close together.
+
+Instead of sparse vectors in $\mathbb{R}^V$ (one dimension per vocabulary word), embeddings map each word to a **dense** vector in $\mathbb{R}^d$ where $d$ is typically 50-300. These vectors are learned from data.
+
+### Word2Vec (2013)
+
+Tomas Mikolov and colleagues at Google introduced Word2Vec, which learns word embeddings using a shallow neural network. There are two architectures:
+
+**Skip-gram**: Given a center word, predict the surrounding context words.
+
+**CBOW (Continuous Bag of Words)**: Given surrounding context words, predict the center word.
+
+Let us focus on Skip-gram, as it tends to work better for less frequent words.
+
+#### Skip-gram Architecture
+
+For a vocabulary of size $V$ and embedding dimension $d$:
+
+1. Each word $w$ has two vectors: an **input embedding** $\mathbf{v}_w \in \mathbb{R}^d$ and an **output embedding** $\mathbf{v}'_w \in \mathbb{R}^d$.
+2. Given center word $w_c$ and context word $w_o$, the model computes:
+
+$$P(w_o \mid w_c) = \frac{\exp(\mathbf{v}'_{w_o} \cdot \mathbf{v}_{w_c})}{\sum_{w=1}^{V} \exp(\mathbf{v}'_w \cdot \mathbf{v}_{w_c})}$$
+
+3. The denominator (summing over the entire vocabulary) is computationally expensive, so in practice **negative sampling** is used: instead of computing the full softmax, we sample a few "negative" words and train a binary classifier.
+
+<MathNote>
+With negative sampling, the objective for a positive pair $(w_c, w_o)$ becomes:
+
+$$\mathcal{L} = \log \sigma(\mathbf{v}'_{w_o} \cdot \mathbf{v}_{w_c}) + \sum_{i=1}^{k} \mathbb{E}_{w_i \sim P_n(w)} \left[ \log \sigma(-\mathbf{v}'_{w_i} \cdot \mathbf{v}_{w_c}) \right]$$
+
+where $\sigma$ is the sigmoid function, $k$ is the number of negative samples (typically 5-15), and $P_n(w)$ is a noise distribution (usually the unigram distribution raised to the 3/4 power).
+</MathNote>
+
+#### Training Word2Vec with Gensim
+
+```python
+from gensim.models import Word2Vec
+
+# Example corpus: list of tokenized sentences
+sentences = [
+    ["the", "king", "sat", "on", "the", "throne"],
+    ["the", "queen", "wore", "a", "golden", "crown"],
+    ["the", "prince", "and", "princess", "lived", "in", "the", "castle"],
+    ["a", "man", "and", "woman", "walked", "through", "the", "village"],
+    # ... in practice you need millions of sentences
+]
+
+model = Word2Vec(
+    sentences,
+    vector_size=100,   # Embedding dimension
+    window=5,          # Context window size
+    min_count=1,       # Minimum word frequency
+    sg=1,              # 1 = Skip-gram, 0 = CBOW
+    negative=5,        # Number of negative samples
+    epochs=100,        # Training iterations
+)
+
+# Get the embedding for a word
+king_vec = model.wv["king"]
+print(f"'king' embedding shape: {king_vec.shape}")
+print(f"'king' embedding (first 10 dims): {king_vec[:10].round(3)}")
+```
+
+### GloVe: Global Vectors (2014)
+
+While Word2Vec learns from local context windows, **GloVe** (from Stanford) combines local context with global co-occurrence statistics. It constructs a word-word co-occurrence matrix $X$ where $X_{ij}$ counts how often word $i$ appears in the context of word $j$, then learns embeddings such that:
+
+$$\mathbf{w}_i^T \mathbf{w}_j + b_i + b_j = \log(X_{ij})$$
+
+The key insight: the *ratio* of co-occurrence probabilities encodes meaning. If "ice" co-occurs frequently with "solid" but not "gas", and "steam" co-occurs with "gas" but not "solid", the ratio of their co-occurrences with these probe words reveals their relationship.
+
+```python
+# Using pre-trained GloVe embeddings
+import numpy as np
+
+def load_glove(path, dim=100):
+    """Load GloVe embeddings from a text file."""
+    embeddings = {}
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            parts = line.strip().split()
+            word = parts[0]
+            vec = np.array(parts[1:], dtype=np.float32)
+            embeddings[word] = vec
+    return embeddings
+
+# glove = load_glove("glove.6B.100d.txt")
+# print(f"Loaded {len(glove)} word vectors")
+```
+
+## What Embeddings Capture
+
+The most famous property of word embeddings is their ability to solve **analogies** via vector arithmetic.
+
+### The King - Man + Woman = Queen Example
+
+```python
+def analogy(embeddings, a, b, c, top_n=5):
+    """
+    Solve: a is to b as c is to ?
+    Computes: b - a + c, finds nearest neighbor.
+    """
+    vec = embeddings[b] - embeddings[a] + embeddings[c]
+
+    # Compute cosine similarity with all words
+    best = []
+    for word, emb in embeddings.items():
+        if word in (a, b, c):
+            continue
+        sim = np.dot(vec, emb) / (np.linalg.norm(vec) * np.linalg.norm(emb))
+        best.append((word, sim))
+
+    best.sort(key=lambda x: -x[1])
+    return best[:top_n]
+
+# analogy(glove, "man", "king", "woman")
+# Expected top result: ("queen", 0.87)
+```
+
+This works because the embedding space encodes relationships as directions:
+
+- $\vec{king} - \vec{man} \approx \vec{queen} - \vec{woman}$ (the "royalty" direction)
+- $\vec{paris} - \vec{france} \approx \vec{tokyo} - \vec{japan}$ (the "capital-of" direction)
+- $\vec{walking} - \vec{walked} \approx \vec{swimming} - \vec{swam}$ (the "tense" direction)
+
+### Similarity and Clustering
+
+Words with similar meanings end up close together in embedding space:
+
+```python
+from sklearn.metrics.pairwise import cosine_similarity
+
+def most_similar(embeddings, word, top_n=10):
+    """Find the most similar words by cosine similarity."""
+    target = embeddings[word].reshape(1, -1)
+    results = []
+    for w, vec in embeddings.items():
+        if w == word:
+            continue
+        sim = cosine_similarity(target, vec.reshape(1, -1))[0, 0]
+        results.append((w, sim))
+    results.sort(key=lambda x: -x[1])
+    return results[:top_n]
+
+# most_similar(glove, "python")
+# Might return: ['snake', 'perl', 'java', 'monty', 'cobra', ...]
+```
+
+### Visualizing Embeddings with t-SNE
+
+High-dimensional embeddings can be projected to 2D for visualization:
+
+```python
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+
+def plot_embeddings(embeddings, words):
+    """Plot a subset of word embeddings in 2D using t-SNE."""
+    vecs = np.array([embeddings[w] for w in words])
+
+    tsne = TSNE(n_components=2, random_state=42, perplexity=5)
+    reduced = tsne.fit_transform(vecs)
+
+    plt.figure(figsize=(12, 8))
+    for i, word in enumerate(words):
+        plt.scatter(reduced[i, 0], reduced[i, 1])
+        plt.annotate(word, (reduced[i, 0] + 0.5, reduced[i, 1] + 0.5))
+    plt.title("Word Embeddings (t-SNE projection)")
+    plt.show()
+
+# Countries cluster together, animals cluster together, etc.
+# plot_embeddings(glove, ["king", "queen", "man", "woman",
+#                          "cat", "dog", "fish", "bird",
+#                          "france", "paris", "japan", "tokyo"])
+```
+
+<KeyTakeaway>
+Word embeddings are one of the most important ideas in NLP. They transform discrete symbols into continuous vectors where geometric relationships (distance, direction) correspond to semantic relationships (similarity, analogy). This makes it possible for neural networks to generalize across words -- if a model learns something about "happy", it automatically knows something about "joyful" because their vectors are nearby.
+</KeyTakeaway>
+
+## Limitations of Static Word Embeddings
+
+Despite their power, Word2Vec and GloVe have fundamental limitations:
+
+1. **One vector per word** -- "bank" gets one embedding regardless of whether it means a financial institution or a river bank. These are **static** embeddings.
+2. **Out-of-vocabulary (OOV) problem** -- if a word was not in the training data, it has no embedding at all.
+3. **No sentence-level representation** -- how do you represent a full sentence? Averaging word vectors loses word order and compositionality.
+4. **Training data biases** -- embeddings learn biases present in training text (e.g., gender stereotypes).
+
+<CommonMistake>
+Do not average word embeddings to create a sentence embedding and expect high-quality results for complex tasks. While averaging works surprisingly well for simple document similarity, it completely ignores word order ("dog bites man" = "man bites dog") and compositionality ("not happy" would be near "happy" because "not" has little effect on the average). For serious sentence-level tasks, you need the sequence models we cover in the next lessons.
+</CommonMistake>
+
+## From Classical to Modern NLP
+
+Let us put these representations on a timeline:
+
+| Era | Representation | Dimensionality | Captures Semantics? | Context-Aware? |
+|-----|---------------|----------------|--------------------|--------------------|
+| ~2000s | Bag of Words | $V$ (sparse) | No | No |
+| ~2005s | TF-IDF | $V$ (sparse) | Slightly | No |
+| 2013 | Word2Vec | 100-300 (dense) | Yes | No |
+| 2014 | GloVe | 50-300 (dense) | Yes | No |
+| 2017+ | Transformers | 768+ (dense) | Yes | **Yes** |
+
+The next lessons in this module will show how we moved from static embeddings to context-dependent representations using RNNs and then transformers.
+
+## Practical Considerations
+
+### Choosing a Representation
+
+- **TF-IDF** is still excellent for document classification, search, and information retrieval when you have limited compute. It is fast, interpretable, and requires no GPU.
+- **Pre-trained Word2Vec/GloVe** are a good starting point when you need word-level semantics but cannot afford to train a large model. Pre-trained vectors (trained on billions of words) are freely available.
+- **Contextual embeddings** (BERT, GPT -- covered in Lessons 4.3-4.4) are the current state of the art but require more compute.
+
+### Embedding Dimensions
+
+Larger embedding dimensions capture more information but risk overfitting on small datasets and use more memory:
+
+| Dimension | Use Case |
+|-----------|----------|
+| 50 | Resource-constrained, small vocabulary |
+| 100-200 | General purpose, good balance |
+| 300 | Maximum benefit for Word2Vec/GloVe |
+| 768-1024 | Transformer models (BERT, GPT-2) |
+| 4096-12288 | Large language models (GPT-4, Claude) |
+
+<KeyTakeaway>
+The core progression in NLP representation is: (1) count words and ignore meaning (BoW), (2) weight words by distinctiveness (TF-IDF), (3) learn dense vectors that capture meaning (Word2Vec/GloVe), (4) learn context-dependent vectors that change based on the surrounding sentence (transformers -- next lesson). Each step preserves more of the information that was in the original text.
+</KeyTakeaway>
+
+## Summary
+
+- Text must be converted to numeric vectors before ML models can process it.
+- **Bag of Words** counts word occurrences but ignores order and semantics.
+- **TF-IDF** improves on BoW by down-weighting common words, still ignoring semantics.
+- **Word2Vec** (Skip-gram / CBOW) learns dense embeddings from local context windows using a shallow neural network.
+- **GloVe** learns embeddings from global co-occurrence statistics.
+- Embeddings capture meaning: similar words have nearby vectors, and directions in the space correspond to semantic relationships (analogies).
+- All static embeddings share a critical limitation: one vector per word, regardless of context.
+
+In the next lesson, we will see how **recurrent neural networks** process text as a sequence, maintaining a hidden state that changes as each word is read -- the first step toward context-aware representations.

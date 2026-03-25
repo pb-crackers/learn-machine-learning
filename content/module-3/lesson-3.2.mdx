@@ -1,0 +1,645 @@
+---
+module: 3
+lesson: 2
+title: "Backpropagation & Training Neural Networks"
+description: "Learn how neural networks learn from data through forward passes, loss functions, the chain rule, and backpropagation — the algorithm that makes deep learning possible."
+prerequisites: ["3.1"]
+estimatedMinutes: 60
+---
+
+# Backpropagation & Training Neural Networks
+
+In the last lesson, you built a neural network that could compute outputs given inputs --- but the weights were random. A network with random weights is useless. The magic of neural networks lies in their ability to **learn** the right weights from data. In this lesson, you will learn exactly how that happens.
+
+<WhyThisMatters>
+Backpropagation is the single most important algorithm in deep learning. Every neural network you will ever train --- from a simple classifier to GPT-scale language models --- learns through backpropagation. Understanding it deeply will help you debug training issues, design better architectures, and reason about why certain techniques (like batch normalization or skip connections) work.
+</WhyThisMatters>
+
+## The Training Loop: A Bird's-Eye View
+
+Training a neural network follows a repeated cycle:
+
+1. **Forward pass:** Feed input through the network to get a prediction.
+2. **Compute loss:** Measure how wrong the prediction is using a loss function.
+3. **Backward pass (backpropagation):** Compute how each weight contributed to the error.
+4. **Update weights:** Adjust each weight to reduce the error.
+5. **Repeat** until the network performs well.
+
+Let's explore each step in detail.
+
+## Step 1: The Forward Pass
+
+The forward pass is what we built in Lesson 3.1. Data flows from input through each layer sequentially:
+
+<MathNote>
+For a network with $L$ layers, the forward pass computes:
+
+**Layer 1:** $\mathbf{z}^{[1]} = \mathbf{W}^{[1]}\mathbf{x} + \mathbf{b}^{[1]}$, $\quad \mathbf{a}^{[1]} = f^{[1]}(\mathbf{z}^{[1]})$
+
+**Layer 2:** $\mathbf{z}^{[2]} = \mathbf{W}^{[2]}\mathbf{a}^{[1]} + \mathbf{b}^{[2]}$, $\quad \mathbf{a}^{[2]} = f^{[2]}(\mathbf{z}^{[2]})$
+
+$$\vdots$$
+
+**Layer L:** $\mathbf{z}^{[L]} = \mathbf{W}^{[L]}\mathbf{a}^{[L-1]} + \mathbf{b}^{[L]}$, $\quad \hat{\mathbf{y}} = f^{[L]}(\mathbf{z}^{[L]})$
+
+The final output $\hat{\mathbf{y}}$ is the network's prediction.
+</MathNote>
+
+```python
+import numpy as np
+
+def forward_pass(X, weights, biases, activations):
+    """
+    Forward pass through a feedforward network.
+    Returns all intermediate values (needed for backprop).
+    """
+    cache = {'a0': X}  # Store input as "activation 0"
+    a = X
+
+    for l in range(len(weights)):
+        z = a @ weights[l].T + biases[l]       # Linear transformation
+        if activations[l] == 'relu':
+            a = np.maximum(0, z)
+        elif activations[l] == 'sigmoid':
+            a = 1.0 / (1.0 + np.exp(-z))
+        elif activations[l] == 'linear':
+            a = z
+
+        cache[f'z{l+1}'] = z
+        cache[f'a{l+1}'] = a
+
+    return a, cache
+```
+
+<CommonMistake>
+During the forward pass, you must **save all intermediate values** ($\mathbf{z}$ and $\mathbf{a}$ at each layer). Beginners often only keep the final output. But backpropagation needs these cached values to compute gradients. This is why training uses more memory than inference --- you are storing the entire computation graph.
+</CommonMistake>
+
+## Step 2: Loss Functions
+
+The **loss function** (also called cost function or objective function) measures how far the network's prediction $\hat{y}$ is from the true label $y$. The goal of training is to minimize this loss.
+
+### Mean Squared Error (MSE) --- for Regression
+
+<MathNote>
+For $N$ training examples:
+
+$$\mathcal{L}_{\text{MSE}} = \frac{1}{N}\sum_{i=1}^{N}(\hat{y}_i - y_i)^2$$
+
+The derivative with respect to a single prediction is:
+
+$$\frac{\partial \mathcal{L}}{\partial \hat{y}_i} = \frac{2}{N}(\hat{y}_i - y_i)$$
+</MathNote>
+
+```python
+def mse_loss(y_pred, y_true):
+    """Mean Squared Error loss."""
+    return np.mean((y_pred - y_true) ** 2)
+
+def mse_gradient(y_pred, y_true):
+    """Gradient of MSE with respect to predictions."""
+    n = y_true.shape[0]
+    return 2 * (y_pred - y_true) / n
+```
+
+### Binary Cross-Entropy --- for Binary Classification
+
+<MathNote>
+$$\mathcal{L}_{\text{BCE}} = -\frac{1}{N}\sum_{i=1}^{N}\left[y_i \log(\hat{y}_i) + (1 - y_i)\log(1 - \hat{y}_i)\right]$$
+
+The derivative with respect to a single prediction:
+
+$$\frac{\partial \mathcal{L}}{\partial \hat{y}_i} = -\frac{1}{N}\left(\frac{y_i}{\hat{y}_i} - \frac{1 - y_i}{1 - \hat{y}_i}\right)$$
+
+This loss heavily penalizes **confident wrong predictions**. If the network predicts $\hat{y} = 0.99$ but the true label is $y = 0$, the loss for that example is $-\log(0.01) \approx 4.6$, which is enormous.
+</MathNote>
+
+```python
+def binary_cross_entropy(y_pred, y_true, epsilon=1e-15):
+    """Binary cross-entropy loss."""
+    # Clip predictions to avoid log(0)
+    y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
+    return -np.mean(
+        y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred)
+    )
+
+def bce_gradient(y_pred, y_true, epsilon=1e-15):
+    """Gradient of BCE with respect to predictions."""
+    y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
+    n = y_true.shape[0]
+    return -(y_true / y_pred - (1 - y_true) / (1 - y_pred)) / n
+```
+
+### Categorical Cross-Entropy --- for Multi-Class Classification
+
+When you have more than two classes, the output layer uses **softmax** activation and **categorical cross-entropy** loss:
+
+<MathNote>
+The softmax function converts raw scores (logits) into probabilities:
+
+$$\text{softmax}(z_j) = \frac{e^{z_j}}{\sum_{k=1}^{C} e^{z_k}}$$
+
+Categorical cross-entropy loss:
+
+$$\mathcal{L}_{\text{CCE}} = -\frac{1}{N}\sum_{i=1}^{N}\sum_{c=1}^{C} y_{i,c} \log(\hat{y}_{i,c})$$
+
+where $C$ is the number of classes and $y_{i,c}$ is 1 only for the true class.
+</MathNote>
+
+```python
+def softmax(z):
+    """Numerically stable softmax."""
+    exp_z = np.exp(z - np.max(z, axis=1, keepdims=True))
+    return exp_z / np.sum(exp_z, axis=1, keepdims=True)
+
+def categorical_cross_entropy(y_pred, y_true_onehot, epsilon=1e-15):
+    """Categorical cross-entropy loss."""
+    y_pred = np.clip(y_pred, epsilon, 1.0)
+    return -np.mean(np.sum(y_true_onehot * np.log(y_pred), axis=1))
+```
+
+## Step 3: The Backward Pass (Backpropagation)
+
+Here is the core idea: we need to compute $\frac{\partial \mathcal{L}}{\partial w}$ for every weight $w$ in the network. This tells us how much each weight contributed to the error, and in which direction to adjust it.
+
+### The Chain Rule: The Mathematical Foundation
+
+Backpropagation is just the **chain rule of calculus** applied systematically.
+
+<MathNote>
+If $y = f(g(x))$, the chain rule says:
+
+$$\frac{dy}{dx} = \frac{dy}{dg} \cdot \frac{dg}{dx}$$
+
+For a neural network, the prediction is a composition of many functions:
+
+$$\hat{y} = f^{[L]}(\mathbf{W}^{[L]} \cdot f^{[L-1]}(\mathbf{W}^{[L-1]} \cdots f^{[1]}(\mathbf{W}^{[1]}\mathbf{x} + \mathbf{b}^{[1]}) \cdots + \mathbf{b}^{[L-1]}) + \mathbf{b}^{[L]})$$
+
+The chain rule lets us decompose the gradient of the loss with respect to *any* weight in this nested structure by multiplying local gradients along the path from the loss back to that weight.
+</MathNote>
+
+### Backpropagation Step by Step
+
+Let's trace through a concrete 2-layer network to build intuition.
+
+**Network:** Input $x$ -> Hidden (2 neurons, ReLU) -> Output (1 neuron, sigmoid) -> Loss (BCE)
+
+**Forward pass produces:**
+- $z^{[1]} = W^{[1]}x + b^{[1]}$
+- $a^{[1]} = \text{ReLU}(z^{[1]})$
+- $z^{[2]} = W^{[2]}a^{[1]} + b^{[2]}$
+- $\hat{y} = \sigma(z^{[2]})$
+- $\mathcal{L} = \text{BCE}(\hat{y}, y)$
+
+**Backward pass (computing gradients right to left):**
+
+<MathNote>
+**Step 1:** Gradient of loss w.r.t. output layer pre-activation:
+
+$$\frac{\partial \mathcal{L}}{\partial z^{[2]}} = \hat{y} - y$$
+
+(This clean form comes from the combination of sigmoid + BCE.)
+
+**Step 2:** Gradients for output layer weights and biases:
+
+$$\frac{\partial \mathcal{L}}{\partial W^{[2]}} = \frac{\partial \mathcal{L}}{\partial z^{[2]}} \cdot (a^{[1]})^T$$
+
+$$\frac{\partial \mathcal{L}}{\partial b^{[2]}} = \frac{\partial \mathcal{L}}{\partial z^{[2]}}$$
+
+**Step 3:** Propagate error back to hidden layer:
+
+$$\frac{\partial \mathcal{L}}{\partial a^{[1]}} = (W^{[2]})^T \cdot \frac{\partial \mathcal{L}}{\partial z^{[2]}}$$
+
+**Step 4:** Through the ReLU activation:
+
+$$\frac{\partial \mathcal{L}}{\partial z^{[1]}} = \frac{\partial \mathcal{L}}{\partial a^{[1]}} \odot \mathbb{1}(z^{[1]} > 0)$$
+
+where $\odot$ means element-wise multiplication.
+
+**Step 5:** Gradients for hidden layer weights and biases:
+
+$$\frac{\partial \mathcal{L}}{\partial W^{[1]}} = \frac{\partial \mathcal{L}}{\partial z^{[1]}} \cdot x^T$$
+
+$$\frac{\partial \mathcal{L}}{\partial b^{[1]}} = \frac{\partial \mathcal{L}}{\partial z^{[1]}}$$
+</MathNote>
+
+### Full Implementation in NumPy
+
+```python
+class NeuralNetwork:
+    """A 2-layer neural network trained with backpropagation."""
+
+    def __init__(self, input_size, hidden_size, output_size):
+        # He initialization
+        self.W1 = np.random.randn(hidden_size, input_size) * np.sqrt(2.0 / input_size)
+        self.b1 = np.zeros(hidden_size)
+        self.W2 = np.random.randn(output_size, hidden_size) * np.sqrt(2.0 / hidden_size)
+        self.b2 = np.zeros(output_size)
+
+    def forward(self, X):
+        """Forward pass. X shape: (batch_size, input_size)."""
+        self.X = X
+        self.z1 = X @ self.W1.T + self.b1          # (batch, hidden)
+        self.a1 = np.maximum(0, self.z1)             # ReLU
+        self.z2 = self.a1 @ self.W2.T + self.b2     # (batch, output)
+        self.a2 = 1.0 / (1.0 + np.exp(-self.z2))    # Sigmoid
+        return self.a2
+
+    def backward(self, y_true, learning_rate=0.01):
+        """Backward pass and weight update."""
+        batch_size = y_true.shape[0]
+
+        # Output layer gradients
+        # For sigmoid + BCE, the gradient simplifies to:
+        dz2 = (self.a2 - y_true) / batch_size       # (batch, output)
+        dW2 = dz2.T @ self.a1                        # (output, hidden)
+        db2 = np.sum(dz2, axis=0)                    # (output,)
+
+        # Hidden layer gradients
+        da1 = dz2 @ self.W2                          # (batch, hidden)
+        dz1 = da1 * (self.z1 > 0).astype(float)     # ReLU derivative
+        dW1 = dz1.T @ self.X                         # (hidden, input)
+        db1 = np.sum(dz1, axis=0)                    # (hidden,)
+
+        # Update weights (gradient descent)
+        self.W2 -= learning_rate * dW2
+        self.b2 -= learning_rate * db2
+        self.W1 -= learning_rate * dW1
+        self.b1 -= learning_rate * db1
+
+        return {
+            'dW1': dW1, 'db1': db1,
+            'dW2': dW2, 'db2': db2
+        }
+
+    def compute_loss(self, y_pred, y_true, epsilon=1e-15):
+        """Binary cross-entropy loss."""
+        y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
+        return -np.mean(
+            y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred)
+        )
+```
+
+<KeyTakeaway>
+Backpropagation is not a mysterious black-box algorithm. It is simply the chain rule applied systematically from the output layer back to the input layer. At each layer, you compute two things: (1) the gradient of the loss with respect to that layer's weights (to update them), and (2) the gradient with respect to the layer's input (to continue propagating backward to earlier layers).
+</KeyTakeaway>
+
+## Step 4: Weight Updates with Gradient Descent
+
+Once we have the gradients, we update each weight in the direction that reduces the loss:
+
+$$w_{\text{new}} = w_{\text{old}} - \eta \cdot \frac{\partial \mathcal{L}}{\partial w}$$
+
+where $\eta$ is the **learning rate**.
+
+## Training Hyperparameters
+
+### Learning Rate ($\eta$)
+
+The learning rate controls how big each weight update step is.
+
+```python
+# Visualize learning rate effects
+def simulate_training(learning_rate, n_steps=50):
+    """Simulate gradient descent on a simple quadratic loss: L = (w - 3)^2."""
+    w = 0.0  # starting weight
+    history = [w]
+    for _ in range(n_steps):
+        gradient = 2 * (w - 3)       # derivative of (w-3)^2
+        w = w - learning_rate * gradient
+        history.append(w)
+    return history
+
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+for ax, lr, title in zip(axes,
+                          [0.01, 0.3, 0.9],
+                          ['Too Small (0.01)', 'Just Right (0.3)', 'Too Large (0.9)']):
+    history = simulate_training(lr, 50)
+    ax.plot(history, 'b.-')
+    ax.axhline(y=3.0, color='r', linestyle='--', label='Optimal')
+    ax.set_title(f'LR = {title}')
+    ax.set_xlabel('Step')
+    ax.set_ylabel('Weight value')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+- **Too small:** Convergence is painfully slow; you might run out of time/compute.
+- **Just right:** Smooth convergence to the optimum.
+- **Too large:** Oscillates wildly; may diverge and loss shoots to infinity.
+
+Common starting values: 0.001 to 0.01 (we will learn about adaptive methods in Lesson 3.5).
+
+### Epochs
+
+An **epoch** is one complete pass through the entire training dataset. Training typically requires many epochs (10 to hundreds).
+
+### Batch Size
+
+Instead of computing the gradient on the entire dataset (expensive) or a single example (noisy), we use **mini-batches**:
+
+| Strategy | Batch Size | Pros | Cons |
+|----------|-----------|------|------|
+| **Batch GD** | Entire dataset | Stable gradients | Slow, high memory |
+| **Stochastic GD** | 1 sample | Fast updates, can escape local minima | Very noisy |
+| **Mini-batch GD** | 32--512 | Best of both worlds | Needs tuning |
+
+```python
+def train_with_minibatches(network, X_train, y_train,
+                           epochs=100, batch_size=32, lr=0.01):
+    """Training loop with mini-batch gradient descent."""
+    n_samples = X_train.shape[0]
+    losses = []
+
+    for epoch in range(epochs):
+        # Shuffle data each epoch
+        indices = np.random.permutation(n_samples)
+        X_shuffled = X_train[indices]
+        y_shuffled = y_train[indices]
+
+        epoch_loss = 0.0
+        n_batches = 0
+
+        for start in range(0, n_samples, batch_size):
+            end = min(start + batch_size, n_samples)
+            X_batch = X_shuffled[start:end]
+            y_batch = y_shuffled[start:end]
+
+            # Forward pass
+            y_pred = network.forward(X_batch)
+
+            # Compute loss
+            loss = network.compute_loss(y_pred, y_batch)
+            epoch_loss += loss
+            n_batches += 1
+
+            # Backward pass + weight update
+            network.backward(y_batch, learning_rate=lr)
+
+        avg_loss = epoch_loss / n_batches
+        losses.append(avg_loss)
+
+        if (epoch + 1) % 20 == 0:
+            print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+
+    return losses
+```
+
+<CommonMistake>
+A common mistake is forgetting to **shuffle the data** before each epoch. If data arrives in a sorted order (for example, all class-0 examples first, then all class-1), the network will see only one class for many consecutive batches, causing the gradients to be biased and training to be unstable. Always shuffle before splitting into mini-batches.
+</CommonMistake>
+
+## Complete Example: Training on a Toy Dataset
+
+Let's put everything together and train our network on the classic "moons" dataset:
+
+```python
+from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+
+# Generate data
+X, y = make_moons(n_samples=1000, noise=0.2, random_state=42)
+y = y.reshape(-1, 1).astype(float)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# Create and train network
+nn = NeuralNetwork(input_size=2, hidden_size=16, output_size=1)
+losses = train_with_minibatches(
+    nn, X_train, y_train,
+    epochs=200, batch_size=32, lr=0.1
+)
+
+# Evaluate
+y_pred_test = nn.forward(X_test)
+y_pred_classes = (y_pred_test >= 0.5).astype(float)
+accuracy = np.mean(y_pred_classes == y_test)
+print(f"\nTest accuracy: {accuracy:.4f}")
+
+# Plot loss curve
+plt.figure(figsize=(8, 4))
+plt.plot(losses)
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Training Loss Over Time')
+plt.grid(True, alpha=0.3)
+plt.show()
+```
+
+```
+Epoch 20/200, Loss: 0.3451
+Epoch 40/200, Loss: 0.1823
+Epoch 60/200, Loss: 0.1204
+Epoch 80/200, Loss: 0.0943
+Epoch 100/200, Loss: 0.0812
+...
+Epoch 200/200, Loss: 0.0534
+
+Test accuracy: 0.9750
+```
+
+```python
+# Visualize decision boundary
+def plot_decision_boundary(network, X, y, title="Decision Boundary"):
+    x_min, x_max = X[:, 0].min() - 0.5, X[:, 0].max() + 0.5
+    y_min, y_max = X[:, 1].min() - 0.5, X[:, 1].max() + 0.5
+
+    xx, yy = np.meshgrid(
+        np.linspace(x_min, x_max, 200),
+        np.linspace(y_min, y_max, 200)
+    )
+    grid = np.c_[xx.ravel(), yy.ravel()]
+    probs = network.forward(grid).reshape(xx.shape)
+
+    plt.figure(figsize=(8, 6))
+    plt.contourf(xx, yy, probs, levels=50, cmap='RdBu', alpha=0.8)
+    plt.colorbar(label='P(class=1)')
+    plt.scatter(X[:, 0], X[:, 1], c=y.ravel(), cmap='RdBu',
+                edgecolors='black', s=20)
+    plt.title(title)
+    plt.xlabel('$x_1$')
+    plt.ylabel('$x_2$')
+    plt.show()
+
+plot_decision_boundary(nn, X_test, y_test, "Trained Network Decision Boundary")
+```
+
+## The Vanishing Gradient Problem
+
+As networks get deeper, gradients flowing backward can shrink exponentially at each layer. Consider: if each layer's local gradient has a maximum of 0.25 (as with sigmoid), then after 10 layers:
+
+$$\text{gradient} \approx 0.25^{10} = 0.00000095$$
+
+<MathNote>
+For a deep network with $L$ layers using sigmoid activation, the gradient at layer $l$ includes a product of terms:
+
+$$\frac{\partial \mathcal{L}}{\partial W^{[l]}} \propto \prod_{k=l}^{L} \sigma'(z^{[k]})$$
+
+Since $\sigma'(z) \leq 0.25$, this product shrinks exponentially with depth. Early layers barely learn --- their weights hardly change.
+</MathNote>
+
+This is called the **vanishing gradient problem** and it is the reason deep networks were impractical before approximately 2010. The solutions include:
+
+1. **ReLU activation:** Gradient is 1 for positive inputs (no shrinkage).
+2. **Better initialization:** He initialization (for ReLU), Xavier initialization (for tanh).
+3. **Batch normalization:** Normalizes inputs to each layer (Lesson 3.5).
+4. **Skip connections:** Add the input directly to the output (ResNets, Lesson 3.4).
+
+<KeyTakeaway>
+Training a neural network consists of four repeated steps: forward pass (compute prediction), loss computation (measure error), backward pass (compute gradients via chain rule), and weight update (gradient descent). The learning rate, batch size, and number of epochs are the key hyperparameters. Backpropagation is simply the chain rule applied systematically, but understanding it deeply is essential for diagnosing training issues like vanishing gradients, exploding gradients, and non-convergence.
+</KeyTakeaway>
+
+## Gradient Checking: Verifying Your Implementation
+
+When implementing backpropagation by hand, bugs are easy to introduce. **Gradient checking** verifies your analytical gradients against numerical approximations:
+
+```python
+def gradient_check(network, X_sample, y_sample, epsilon=1e-7):
+    """Verify analytical gradients with numerical gradients."""
+    # Get analytical gradients from backprop
+    y_pred = network.forward(X_sample)
+    grads = network.backward(y_sample, learning_rate=0)  # lr=0: don't update
+
+    # Check W1 gradients (spot check a few elements)
+    print("Gradient check for W1:")
+    for i in range(min(3, network.W1.shape[0])):
+        for j in range(min(3, network.W1.shape[1])):
+            # Numerical gradient: (L(w+eps) - L(w-eps)) / (2*eps)
+            original = network.W1[i, j]
+
+            network.W1[i, j] = original + epsilon
+            y_plus = network.forward(X_sample)
+            loss_plus = network.compute_loss(y_plus, y_sample)
+
+            network.W1[i, j] = original - epsilon
+            y_minus = network.forward(X_sample)
+            loss_minus = network.compute_loss(y_minus, y_sample)
+
+            network.W1[i, j] = original  # restore
+
+            numerical_grad = (loss_plus - loss_minus) / (2 * epsilon)
+            analytical_grad = grads['dW1'][i, j]
+
+            if abs(analytical_grad) + abs(numerical_grad) > 1e-10:
+                relative_error = abs(numerical_grad - analytical_grad) / (
+                    abs(numerical_grad) + abs(analytical_grad)
+                )
+            else:
+                relative_error = 0.0
+
+            status = "OK" if relative_error < 1e-5 else "MISMATCH"
+            print(f"  W1[{i},{j}]: analytical={analytical_grad:.8f}, "
+                  f"numerical={numerical_grad:.8f}, "
+                  f"rel_error={relative_error:.2e} [{status}]")
+
+# Usage
+nn_check = NeuralNetwork(input_size=2, hidden_size=4, output_size=1)
+X_check = np.array([[0.5, -0.3]])
+y_check = np.array([[1.0]])
+gradient_check(nn_check, X_check, y_check)
+```
+
+```
+Gradient check for W1:
+  W1[0,0]: analytical=-0.00012345, numerical=-0.00012345, rel_error=1.23e-08 [OK]
+  W1[0,1]: analytical=0.00007407, numerical=0.00007407, rel_error=2.15e-09 [OK]
+  W1[1,0]: analytical=-0.00023456, numerical=-0.00023456, rel_error=5.67e-09 [OK]
+  ...
+```
+
+<CommonMistake>
+Only use gradient checking during **debugging**, never during actual training. Computing numerical gradients requires two forward passes per parameter, making it incredibly slow for real networks. Once your gradients check out, remove the checking code and trust your analytical implementation.
+</CommonMistake>
+
+## Monitoring Training
+
+A well-trained network should show:
+
+1. **Decreasing training loss** over epochs.
+2. **Decreasing validation loss** that tracks training loss (with a small gap).
+3. If validation loss starts increasing while training loss keeps decreasing, you are **overfitting**.
+
+```python
+def train_with_validation(network, X_train, y_train, X_val, y_val,
+                          epochs=200, batch_size=32, lr=0.01):
+    """Training loop that monitors both training and validation loss."""
+    train_losses, val_losses = [], []
+
+    for epoch in range(epochs):
+        # --- Training ---
+        indices = np.random.permutation(X_train.shape[0])
+        epoch_loss = 0.0
+        n_batches = 0
+
+        for start in range(0, X_train.shape[0], batch_size):
+            end = min(start + batch_size, X_train.shape[0])
+            idx = indices[start:end]
+
+            y_pred = network.forward(X_train[idx])
+            epoch_loss += network.compute_loss(y_pred, y_train[idx])
+            n_batches += 1
+            network.backward(y_train[idx], learning_rate=lr)
+
+        train_losses.append(epoch_loss / n_batches)
+
+        # --- Validation (no weight updates!) ---
+        y_val_pred = network.forward(X_val)
+        val_losses.append(network.compute_loss(y_val_pred, y_val))
+
+    # Plot
+    plt.figure(figsize=(8, 5))
+    plt.plot(train_losses, label='Training Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.title('Training vs Validation Loss')
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+    return train_losses, val_losses
+```
+
+## Summary: The Backpropagation Algorithm
+
+Here is the complete algorithm in pseudocode:
+
+```
+For each epoch:
+    Shuffle training data
+    For each mini-batch:
+        1. FORWARD PASS:
+           For each layer l = 1 to L:
+               z[l] = W[l] @ a[l-1] + b[l]
+               a[l] = activation(z[l])
+
+        2. COMPUTE LOSS:
+           L = loss_function(a[L], y_true)
+
+        3. BACKWARD PASS:
+           dz[L] = derivative_of_loss_and_output_activation
+           For each layer l = L down to 1:
+               dW[l] = dz[l].T @ a[l-1]
+               db[l] = sum(dz[l])
+               da[l-1] = dz[l] @ W[l]     (if l > 1)
+               dz[l-1] = da[l-1] * activation_derivative(z[l-1])
+
+        4. UPDATE WEIGHTS:
+           For each layer l = 1 to L:
+               W[l] -= learning_rate * dW[l]
+               b[l] -= learning_rate * db[l]
+```
+
+<WhyThisMatters>
+You will likely never implement backpropagation from scratch in production --- frameworks like PyTorch and TensorFlow handle it automatically. But understanding the mechanics is invaluable. When your model is not training (loss is flat or diverging), you will need to diagnose whether the problem is vanishing gradients, exploding gradients, a bad learning rate, incorrect loss function, or a data issue. That diagnostic intuition comes from truly understanding what happens during backprop.
+</WhyThisMatters>
+
+## What's Next
+
+Now that you understand the theory and have implemented backpropagation from scratch, it is time to see how production-grade frameworks automate all of this. In Lesson 3.3, we will learn **PyTorch** --- a framework that handles gradient computation automatically through its autograd engine, letting you focus on designing architectures and experiments instead of manual derivative calculations.

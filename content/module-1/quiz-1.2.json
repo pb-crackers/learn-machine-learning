@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "A dataset of house prices has a mean of $350k and a median of $280k. What does this suggest?",
+      "options": [
+        "The data is perfectly normally distributed",
+        "The data is skewed left (toward lower values)",
+        "The data is skewed right — a few expensive houses pull the mean above the median",
+        "There is an error in the calculations"
+      ],
+      "correct": "C",
+      "explanation": "When the mean is significantly higher than the median, it indicates right skew — a few very large values (expensive houses) pull the mean up while the median remains resistant to outliers."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "In the 68-95-99.7 rule for a normal distribution, approximately what percentage of data falls within ±2 standard deviations of the mean?",
+      "options": [
+        "68%",
+        "90%",
+        "95%",
+        "99.7%"
+      ],
+      "correct": "C",
+      "explanation": "The 68-95-99.7 rule states that approximately 68% of data falls within ±1σ, 95% within ±2σ, and 99.7% within ±3σ of the mean in a normal distribution."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "Using Bayes' theorem, if a rare disease affects 1% of the population and a test has 95% sensitivity and 90% specificity, what happens to P(Disease | Positive Test)?",
+      "options": [
+        "It equals 95% because the test is 95% sensitive",
+        "It is much lower than 95% because the disease is rare (low base rate)",
+        "It equals 90% because of the specificity",
+        "It equals 1% because that is the prevalence"
+      ],
+      "correct": "B",
+      "explanation": "When the base rate is low (1%), even a good test produces many false positives relative to true positives. Using Bayes' theorem: P(D|+) = (0.95 × 0.01) / (0.95 × 0.01 + 0.10 × 0.99) ≈ 8.8%, far below 95%. This is the base rate fallacy."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "Two variables have a Pearson correlation of -0.92. What does this mean?",
+      "options": [
+        "There is almost no relationship between them",
+        "There is a strong positive relationship",
+        "There is a strong negative linear relationship — as one increases, the other tends to decrease",
+        "One variable causes the other to decrease"
+      ],
+      "correct": "C",
+      "explanation": "A correlation of -0.92 indicates a strong negative linear relationship. Values close to -1 mean as one variable increases, the other reliably decreases. However, correlation does not imply causation."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "Why is standardization (z-score normalization) important before applying many ML algorithms?",
+      "options": [
+        "It makes the data normally distributed",
+        "It removes outliers from the dataset",
+        "It puts all features on the same scale so no single feature dominates due to its units",
+        "It increases the size of the dataset"
+      ],
+      "correct": "C",
+      "explanation": "Standardization rescales features to have mean 0 and standard deviation 1. Without it, features with large numerical ranges (e.g., salary in thousands) would dominate features with small ranges (e.g., age) in distance-based or gradient-based algorithms."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "When standardizing features for ML, you should compute the mean and standard deviation from:",
+      "options": [
+        "The entire dataset (train + test combined)",
+        "The training data only, then apply the same transform to test data",
+        "The test data only",
+        "Each batch of data separately"
+      ],
+      "correct": "B",
+      "explanation": "You must compute statistics from training data only to avoid data leakage. Using test data statistics would give your model information about the test distribution, leading to overly optimistic performance estimates."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "What is the variance of the dataset [2, 4, 4, 4, 5, 5, 7, 9] if the mean is 5?",
+      "options": [
+        "2",
+        "4",
+        "3.5",
+        "0"
+      ],
+      "correct": "B",
+      "explanation": "Variance = (1/n) Σ(xᵢ - μ)² = (1/8)[(2-5)² + (4-5)² + (4-5)² + (4-5)² + (5-5)² + (5-5)² + (7-5)² + (9-5)²] = (9+1+1+1+0+0+4+16)/8 = 32/8 = 4."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "In Bayes' theorem P(A|B) = P(B|A)·P(A) / P(B), what is the term P(A) called?",
+      "options": [
+        "The posterior probability",
+        "The likelihood",
+        "The prior probability",
+        "The evidence"
+      ],
+      "correct": "C",
+      "explanation": "P(A) is the prior — our belief about A before observing evidence B. P(B|A) is the likelihood, P(B) is the evidence (or marginal likelihood), and P(A|B) is the posterior — our updated belief after seeing the evidence."
+    }
+  ]
+}

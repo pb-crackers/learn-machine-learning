@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "What is the key property that makes RNNs different from feedforward neural networks?",
+      "options": [
+        "RNNs use convolutional layers instead of dense layers",
+        "RNNs share the same weight matrices across all time steps and maintain a hidden state that evolves as the sequence is processed",
+        "RNNs can only process fixed-length inputs",
+        "RNNs do not use backpropagation for training"
+      ],
+      "correct": "B",
+      "explanation": "RNNs apply the same weights at every time step (weight sharing) and maintain a hidden state h_t that is updated at each step using the current input and previous hidden state. This allows them to process variable-length sequences while keeping a constant number of parameters."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "In the vanishing gradient problem, what causes gradients to shrink during backpropagation through time?",
+      "options": [
+        "The learning rate is set too low",
+        "The loss function is not differentiable",
+        "Repeated multiplication by the weight matrix and tanh derivatives (values < 1) causes exponential decay of gradients over many time steps",
+        "The hidden state vector is too small to store information"
+      ],
+      "correct": "C",
+      "explanation": "During BPTT, the gradient at step 1 requires multiplying through the Jacobian at every intermediate step. Each multiplication involves W_hh and the derivative of tanh (which is always between 0 and 1). If the largest singular value of W_hh is less than 1, these repeated multiplications cause the gradient to shrink exponentially."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "How does the LSTM cell state help solve the vanishing gradient problem?",
+      "options": [
+        "It uses ReLU activation instead of tanh, which does not saturate",
+        "The cell state update is additive with a multiplicative forget gate; when the forget gate is near 1, gradients flow through nearly unchanged",
+        "It eliminates the need for backpropagation entirely",
+        "It uses a separate optimizer for long-range dependencies"
+      ],
+      "correct": "B",
+      "explanation": "The cell state update c_t = f_t * c_{t-1} + i_t * c_tilde is crucial. When the forget gate f_t is close to 1, the gradient of c_t with respect to c_{t-1} is approximately 1, creating a 'gradient highway' that allows error signals to flow back through many time steps without vanishing."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "What role does the forget gate play in an LSTM?",
+      "options": [
+        "It decides which elements of the cell state to erase by multiplying the previous cell state by values between 0 and 1",
+        "It determines the learning rate for each parameter",
+        "It prevents the model from overfitting by randomly dropping connections",
+        "It resets the hidden state to zero at the start of each sentence"
+      ],
+      "correct": "A",
+      "explanation": "The forget gate f_t outputs values between 0 and 1 (via sigmoid) and is element-wise multiplied with the previous cell state c_{t-1}. A value near 0 means 'forget this information' and a value near 1 means 'keep this information'. This allows the LSTM to selectively retain or discard information over long sequences."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "How does a GRU differ from an LSTM?",
+      "options": [
+        "A GRU has no gating mechanism at all",
+        "A GRU merges the cell state and hidden state into one vector and uses two gates (update and reset) instead of three",
+        "A GRU processes sequences in both directions simultaneously",
+        "A GRU uses attention instead of recurrence"
+      ],
+      "correct": "B",
+      "explanation": "The GRU simplifies the LSTM by eliminating the separate cell state (merging it with the hidden state) and using two gates: the update gate (which combines the LSTM's forget and input gates) and the reset gate. This results in fewer parameters and faster training with comparable performance."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "Why is gradient clipping important when training RNNs?",
+      "options": [
+        "It speeds up convergence by making gradients larger",
+        "It prevents the exploding gradient problem by capping the gradient norm to a maximum value",
+        "It eliminates the vanishing gradient problem",
+        "It reduces the memory required for storing activations"
+      ],
+      "correct": "B",
+      "explanation": "While LSTMs address vanishing gradients, exploding gradients (where the gradient norm grows exponentially) can still occur. Gradient clipping caps the gradient norm to a threshold (typically 1.0-5.0), preventing catastrophically large weight updates that can destabilize training."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "What is the 'bottleneck problem' in the encoder-decoder architecture?",
+      "options": [
+        "The decoder is slower than the encoder",
+        "The entire source sequence must be compressed into a single fixed-size hidden state vector, which struggles to encode long sequences",
+        "The encoder and decoder cannot share vocabulary",
+        "The model requires too many layers to achieve good performance"
+      ],
+      "correct": "B",
+      "explanation": "In the basic encoder-decoder architecture, the encoder compresses the entire input sequence into its final hidden state h_T. For long sequences, this single vector is insufficient to capture all the relevant information, leading to degraded performance. This bottleneck motivated the invention of the attention mechanism."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "What advantage does a bidirectional LSTM have over a unidirectional one?",
+      "options": [
+        "It trains twice as fast because it processes the sequence in parallel",
+        "It can access both past and future context at every position, which helps for tasks like named entity recognition",
+        "It completely eliminates the vanishing gradient problem",
+        "It requires half the parameters of a unidirectional LSTM"
+      ],
+      "correct": "B",
+      "explanation": "A bidirectional LSTM processes the sequence both left-to-right and right-to-left, then concatenates the hidden states from both directions. This gives the model access to both past and future context at every position, which is crucial for tasks where the meaning of a word depends on what comes after it (e.g., 'He went to the bank to fish' -- 'fish' disambiguates 'bank')."
+    }
+  ]
+}

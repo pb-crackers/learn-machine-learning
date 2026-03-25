@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "What does the sigmoid function output when its input z equals 0?",
+      "options": [
+        "0",
+        "0.25",
+        "0.5",
+        "1"
+      ],
+      "correct": "C",
+      "explanation": "sigma(0) = 1 / (1 + e^0) = 1 / (1 + 1) = 0.5. This is why the default classification threshold is 0.5 — it corresponds to the decision boundary where theta^T * x = 0."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "In a medical screening test, which metric is most important when the cost of missing a disease is very high?",
+      "options": [
+        "Accuracy",
+        "Precision",
+        "Recall (sensitivity)",
+        "Specificity"
+      ],
+      "correct": "C",
+      "explanation": "When missing a positive case (false negative) is very costly — such as failing to detect cancer — you want high recall. Recall = TP / (TP + FN), which measures what fraction of actual positive cases the model catches. You can trade some precision (more false alarms) for higher recall."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "Why is MSE not used as the cost function for logistic regression?",
+      "options": [
+        "MSE only works for multi-class problems",
+        "MSE would make the cost function non-convex with the sigmoid, causing gradient descent to get stuck in local minima",
+        "MSE always returns zero for classification tasks",
+        "MSE cannot handle probability outputs"
+      ],
+      "correct": "B",
+      "explanation": "When MSE is combined with the sigmoid function, the resulting cost function is non-convex — it has many local minima where gradient descent can get stuck. Log loss (binary cross-entropy) is convex for logistic regression, guaranteeing convergence to the global minimum."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "A model has precision = 0.90 and recall = 0.60. What is its F1 score?",
+      "options": [
+        "0.72",
+        "0.75",
+        "0.78",
+        "0.80"
+      ],
+      "correct": "A",
+      "explanation": "F1 = 2 * (precision * recall) / (precision + recall) = 2 * (0.90 * 0.60) / (0.90 + 0.60) = 2 * 0.54 / 1.50 = 1.08 / 1.50 = 0.72. The F1 score is the harmonic mean of precision and recall, and is always closer to the smaller of the two values."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "In K-Nearest Neighbors, what happens when K is set to a very large value (e.g., K = n where n is the entire training set)?",
+      "options": [
+        "The model overfits the training data",
+        "The model always predicts the majority class in the training set",
+        "The model becomes equivalent to logistic regression",
+        "The model becomes infinitely complex"
+      ],
+      "correct": "B",
+      "explanation": "When K equals the number of training samples, every prediction considers the entire training set. The majority vote simply returns the most common class overall, regardless of the input features. This is maximum bias — the model is far too simple to capture any pattern."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "What does an AUC-ROC score of 0.5 indicate?",
+      "options": [
+        "A perfect classifier",
+        "A classifier performing no better than random guessing",
+        "A classifier that always predicts the positive class",
+        "A classifier with 50% accuracy"
+      ],
+      "correct": "B",
+      "explanation": "AUC-ROC of 0.5 means the model has no discriminative ability — it cannot distinguish between positive and negative classes any better than randomly assigning scores. The ROC curve falls along the diagonal line from (0,0) to (1,1), which represents random guessing."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "In the confusion matrix, a False Negative (FN) means:",
+      "options": [
+        "The model predicted positive, but the true label is negative",
+        "The model predicted negative, but the true label is positive",
+        "The model predicted negative, and the true label is negative",
+        "The model predicted positive, and the true label is positive"
+      ],
+      "correct": "B",
+      "explanation": "A False Negative means the model predicted negative ('no') but the actual label was positive ('yes'). This is a missed detection. In medical terms, it means the model failed to identify a patient who actually has the disease."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "In softmax regression for K classes, the predicted probabilities for a single sample must:",
+      "options": [
+        "All equal 1/K",
+        "All be greater than 0.5",
+        "Sum to exactly 1",
+        "Be either 0 or 1"
+      ],
+      "correct": "C",
+      "explanation": "The softmax function normalizes the raw scores (logits) into a valid probability distribution: each output is in (0, 1) and all K outputs sum to exactly 1. This is what makes the output interpretable as class probabilities."
+    }
+  ]
+}

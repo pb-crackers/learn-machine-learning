@@ -1,0 +1,608 @@
+---
+module: 3
+lesson: 5
+title: "Regularization, Optimization & Practical Deep Learning"
+description: "Master the practical techniques that make deep learning work: dropout, batch normalization, data augmentation, advanced optimizers, learning rate schedules, and transfer learning."
+prerequisites: ["3.4"]
+estimatedMinutes: 55
+---
+
+# Regularization, Optimization & Practical Deep Learning
+
+You now know how to build and train neural networks. But the gap between a working model and a *good* model is vast. In this lesson, you will learn the practical techniques that close that gap --- the tricks and tools that practitioners use every day to train models that generalize well, converge quickly, and solve real problems.
+
+<WhyThisMatters>
+Knowing the theory behind neural networks gets you maybe 30% of the way to being an effective practitioner. The other 70% is knowing which practical techniques to apply, when to apply them, and how to diagnose problems. This lesson covers the toolkit that separates textbook knowledge from production-ready skills.
+</WhyThisMatters>
+
+## Regularization: Fighting Overfitting
+
+Deep networks have millions of parameters --- more than enough to memorize the training data. Regularization techniques prevent this memorization and encourage the network to learn patterns that generalize.
+
+### Dropout
+
+**Dropout** randomly sets a fraction of neuron outputs to zero during each training step. This forces the network to not rely on any single neuron, creating redundant representations.
+
+```python
+import torch
+import torch.nn as nn
+
+class DropoutDemo(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer1 = nn.Linear(784, 256)
+        self.dropout1 = nn.Dropout(p=0.5)   # Drop 50% of neurons
+        self.layer2 = nn.Linear(256, 128)
+        self.dropout2 = nn.Dropout(p=0.3)   # Drop 30% of neurons
+        self.layer3 = nn.Linear(128, 10)
+
+    def forward(self, x):
+        x = torch.relu(self.layer1(x))
+        x = self.dropout1(x)                 # Applied during training only
+        x = torch.relu(self.layer2(x))
+        x = self.dropout2(x)
+        x = self.layer3(x)
+        return x
+
+model = DropoutDemo()
+
+# During training: neurons are randomly dropped
+model.train()
+x = torch.randn(1, 784)
+out1 = model(x)
+out2 = model(x)
+print(f"Same input, different outputs during training:")
+print(f"  Output 1: {out1[0, :5].detach()}")
+print(f"  Output 2: {out2[0, :5].detach()}")
+# Outputs differ because different neurons are dropped each time
+
+# During evaluation: all neurons active, outputs scaled
+model.eval()
+out3 = model(x)
+out4 = model(x)
+print(f"\nSame input, same outputs during eval:")
+print(f"  Output 3: {out3[0, :5].detach()}")
+print(f"  Output 4: {out4[0, :5].detach()}")
+# Outputs are identical
+```
+
+<MathNote>
+During training, each neuron's output is set to 0 with probability $p$. The surviving neurons' outputs are scaled by $\frac{1}{1-p}$ to maintain the expected sum. This is called **inverted dropout**.
+
+During evaluation, dropout is disabled --- all neurons are active. Because of the inverted scaling during training, no adjustment is needed at test time.
+
+Mathematically, if $\mathbf{r}$ is a binary mask where each entry is 0 with probability $p$:
+
+$$\tilde{\mathbf{a}} = \frac{\mathbf{r} \odot \mathbf{a}}{1 - p}$$
+</MathNote>
+
+**Guidelines for dropout rates:**
+- Input layer: 0.0--0.2 (if used at all)
+- Hidden layers: 0.2--0.5
+- Before the output layer: 0.0 (usually not applied here)
+- For CNNs: use sparingly (0.1--0.25) or use Dropout2d
+
+<CommonMistake>
+Dropout must be **disabled during evaluation** by calling `model.eval()`. If you forget, every inference will produce different (and worse) results because neurons are randomly being dropped. Conversely, you must call `model.train()` to re-enable dropout when resuming training.
+</CommonMistake>
+
+### Batch Normalization
+
+**Batch Normalization** (BatchNorm) normalizes the inputs to each layer so they have zero mean and unit variance across the mini-batch. This stabilizes training dramatically and allows higher learning rates.
+
+```python
+class CNNWithBatchNorm(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 32, 3, padding=1),
+            nn.BatchNorm2d(32),               # Normalize after conv
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+
+            nn.Conv2d(32, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+
+            nn.Conv2d(64, 128, 3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d(1),
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(128, 10)
+        )
+
+    def forward(self, x):
+        return self.classifier(self.features(x))
+```
+
+<MathNote>
+For a mini-batch of activations, BatchNorm computes:
+
+$$\hat{x}_i = \frac{x_i - \mu_B}{\sqrt{\sigma_B^2 + \epsilon}}$$
+
+$$y_i = \gamma \hat{x}_i + \beta$$
+
+where $\mu_B$ and $\sigma_B^2$ are the batch mean and variance, $\epsilon$ is a small constant for numerical stability, and $\gamma$ (scale) and $\beta$ (shift) are **learnable parameters** that let the network undo the normalization if it wants to.
+
+During training, batch statistics are used. During evaluation, running averages (computed during training) are used instead --- another reason `model.eval()` matters.
+</MathNote>
+
+**Why BatchNorm helps:**
+1. **Stabilizes training** by preventing internal covariate shift.
+2. **Allows higher learning rates** --- the normalization prevents activations from growing too large.
+3. **Mild regularization** --- batch statistics add noise, acting like a weak form of regularization.
+
+### Data Augmentation
+
+Data augmentation artificially increases the effective size of your dataset by applying random transformations to training images.
+
+```python
+from torchvision import transforms
+
+# A typical augmentation pipeline for image classification
+train_transform = transforms.Compose([
+    transforms.RandomHorizontalFlip(p=0.5),         # 50% chance to flip
+    transforms.RandomRotation(degrees=15),           # Rotate up to 15 degrees
+    transforms.RandomCrop(32, padding=4),            # Crop with padding
+    transforms.ColorJitter(
+        brightness=0.2, contrast=0.2,
+        saturation=0.2, hue=0.1
+    ),
+    transforms.RandomAffine(
+        degrees=0, translate=(0.1, 0.1)              # Shift up to 10%
+    ),
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465),
+                         (0.2470, 0.2435, 0.2616)),
+    transforms.RandomErasing(p=0.25),                # Random cutout
+])
+
+# IMPORTANT: No augmentation for validation/test!
+test_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465),
+                         (0.2470, 0.2435, 0.2616)),
+])
+```
+
+<CommonMistake>
+Never apply data augmentation to the validation or test set. Augmentation is a training technique --- it introduces random variations so the model sees different versions of each image. At evaluation time, you want consistent, clean inputs to accurately measure model performance.
+</CommonMistake>
+
+**Augmentation guidelines:**
+- Flips: horizontal for most tasks, vertical only if makes sense (satellite images).
+- Rotation: small angles (5--15 degrees) unless the task is rotation-invariant.
+- Color jitter: conservative amounts; do not distort images beyond recognition.
+- Random erasing/cutout: teaches the model to be robust to occlusion.
+
+## Advanced Optimizers
+
+Vanilla SGD with a fixed learning rate is simple but slow. Modern optimizers adapt the learning rate for each parameter individually.
+
+### SGD with Momentum
+
+Momentum accelerates SGD by accumulating a velocity vector in the direction of persistent gradients:
+
+<MathNote>
+$$\mathbf{v}_t = \beta \mathbf{v}_{t-1} + \nabla_\theta \mathcal{L}(\theta_t)$$
+$$\theta_{t+1} = \theta_t - \eta \mathbf{v}_t$$
+
+where $\beta$ (typically 0.9) controls how much past gradients influence the current update. Think of it like a ball rolling downhill --- it builds up speed in consistent directions and dampens oscillations.
+</MathNote>
+
+### RMSProp
+
+Adapts the learning rate for each parameter based on the magnitude of recent gradients:
+
+<MathNote>
+$$\mathbf{s}_t = \beta \mathbf{s}_{t-1} + (1 - \beta)(\nabla_\theta \mathcal{L})^2$$
+$$\theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\mathbf{s}_t + \epsilon}} \nabla_\theta \mathcal{L}$$
+
+Parameters with large gradients get smaller effective learning rates; parameters with small gradients get larger effective learning rates.
+</MathNote>
+
+### Adam (Adaptive Moment Estimation)
+
+Adam combines the best of momentum and RMSProp. It is the **default optimizer for most deep learning projects**.
+
+<MathNote>
+Adam maintains two moving averages:
+
+**First moment** (mean of gradients, like momentum):
+$$\mathbf{m}_t = \beta_1 \mathbf{m}_{t-1} + (1 - \beta_1)\nabla_\theta \mathcal{L}$$
+
+**Second moment** (mean of squared gradients, like RMSProp):
+$$\mathbf{v}_t = \beta_2 \mathbf{v}_{t-1} + (1 - \beta_2)(\nabla_\theta \mathcal{L})^2$$
+
+**Bias correction** (important for early steps when estimates are biased toward zero):
+$$\hat{\mathbf{m}}_t = \frac{\mathbf{m}_t}{1 - \beta_1^t}, \quad \hat{\mathbf{v}}_t = \frac{\mathbf{v}_t}{1 - \beta_2^t}$$
+
+**Update:**
+$$\theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\hat{\mathbf{v}}_t} + \epsilon}\hat{\mathbf{m}}_t$$
+
+Default hyperparameters: $\beta_1 = 0.9$, $\beta_2 = 0.999$, $\epsilon = 10^{-8}$.
+</MathNote>
+
+```python
+import torch.optim as optim
+
+# Different optimizers in PyTorch
+model = CNNWithBatchNorm()
+
+# SGD with momentum
+optimizer_sgd = optim.SGD(model.parameters(), lr=0.01, momentum=0.9,
+                          weight_decay=1e-4)
+
+# Adam (most common default)
+optimizer_adam = optim.Adam(model.parameters(), lr=0.001,
+                           weight_decay=1e-4)
+
+# AdamW (Adam with decoupled weight decay — often preferred)
+optimizer_adamw = optim.AdamW(model.parameters(), lr=0.001,
+                              weight_decay=0.01)
+```
+
+### Which Optimizer to Use?
+
+| Optimizer | Best For | Typical LR | Notes |
+|-----------|----------|-----------|-------|
+| SGD + Momentum | Final accuracy (vision) | 0.01--0.1 | Often best final performance but requires LR scheduling |
+| Adam | Fast prototyping, most tasks | 0.0001--0.001 | Great default, may generalize slightly worse |
+| AdamW | Modern best practice | 0.0001--0.001 | Correct weight decay implementation |
+
+<KeyTakeaway>
+Start with Adam (lr=0.001) for quick experimentation. Switch to SGD with momentum and a learning rate schedule if you need to squeeze out the last bit of performance. AdamW is the modern recommendation when weight decay regularization is important.
+</KeyTakeaway>
+
+## Learning Rate Schedules
+
+A fixed learning rate is rarely optimal. **Learning rate schedules** adjust the learning rate during training --- typically starting high and decreasing over time.
+
+```python
+from torch.optim.lr_scheduler import (
+    StepLR, CosineAnnealingLR, ReduceLROnPlateau, OneCycleLR
+)
+
+model = CNNWithBatchNorm()
+optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+
+# Step decay: multiply LR by 0.1 every 30 epochs
+scheduler_step = StepLR(optimizer, step_size=30, gamma=0.1)
+
+# Cosine annealing: smoothly decrease LR following a cosine curve
+scheduler_cosine = CosineAnnealingLR(optimizer, T_max=100)
+
+# Reduce on plateau: decrease LR when validation loss stops improving
+scheduler_plateau = ReduceLROnPlateau(
+    optimizer, mode='min', factor=0.1, patience=10
+)
+
+# One Cycle: warmup then decay (state-of-the-art for many tasks)
+# scheduler_onecycle = OneCycleLR(
+#     optimizer, max_lr=0.1, epochs=100, steps_per_epoch=len(train_loader)
+# )
+```
+
+```python
+# Visualize schedules
+import matplotlib.pyplot as plt
+import copy
+
+def visualize_schedule(optimizer_fn, scheduler_fn, epochs, title):
+    model_temp = nn.Linear(10, 10)
+    opt = optimizer_fn(model_temp.parameters())
+    sched = scheduler_fn(opt)
+
+    lrs = []
+    for _ in range(epochs):
+        lrs.append(opt.param_groups[0]['lr'])
+        opt.step()
+        sched.step()
+    return lrs
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+schedules = [
+    ("Step Decay", lambda p: optim.SGD(p, lr=0.1),
+     lambda o: StepLR(o, step_size=30, gamma=0.1)),
+    ("Cosine Annealing", lambda p: optim.SGD(p, lr=0.1),
+     lambda o: CosineAnnealingLR(o, T_max=100)),
+    ("Exponential", lambda p: optim.SGD(p, lr=0.1),
+     lambda o: torch.optim.lr_scheduler.ExponentialLR(o, gamma=0.95)),
+]
+
+for ax, (title, opt_fn, sched_fn) in zip(axes, schedules):
+    lrs = visualize_schedule(opt_fn, sched_fn, 100, title)
+    ax.plot(lrs, 'b-', linewidth=2)
+    ax.set_title(title)
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Learning Rate')
+    ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+### Using Schedulers in Training
+
+```python
+# Example: training with cosine annealing
+optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9,
+                      weight_decay=5e-4)
+scheduler = CosineAnnealingLR(optimizer, T_max=200)
+
+for epoch in range(200):
+    model.train()
+    for images, labels in train_loader:
+        images, labels = images.to(device), labels.to(device)
+        optimizer.zero_grad()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+    scheduler.step()  # Update LR after each epoch
+    current_lr = optimizer.param_groups[0]['lr']
+    print(f"Epoch {epoch+1}, LR: {current_lr:.6f}")
+```
+
+## Transfer Learning
+
+Training a CNN from scratch requires large datasets and significant compute. **Transfer learning** lets you leverage a model that was already trained on millions of images (e.g., ImageNet) and adapt it to your specific task.
+
+### Why Transfer Learning Works
+
+The early layers of a CNN learn general features (edges, textures, colors) that are useful for nearly any vision task. Only the later layers learn task-specific features. By reusing the general features, you need far less data for your specific task.
+
+### Transfer Learning in PyTorch
+
+```python
+import torchvision.models as models
+
+# Load a pretrained ResNet-18
+model = models.resnet18(weights='IMAGENET1K_V1')
+
+# Freeze all layers (don't update their weights)
+for param in model.parameters():
+    param.requires_grad = False
+
+# Replace the final classification layer
+# ResNet-18's fc layer: Linear(512, 1000) for ImageNet's 1000 classes
+# Replace it for our task (e.g., 5 classes)
+num_classes = 5
+model.fc = nn.Sequential(
+    nn.Linear(512, 256),
+    nn.ReLU(),
+    nn.Dropout(0.3),
+    nn.Linear(256, num_classes)
+)
+
+# Only the new layers will be trained
+trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+total_params = sum(p.numel() for p in model.parameters())
+print(f"Training {trainable_params:,} of {total_params:,} parameters "
+      f"({100*trainable_params/total_params:.1f}%)")
+```
+
+```
+Training 131,845 of 11,308,229 parameters (1.2%)
+```
+
+### Fine-Tuning Strategy
+
+The most effective approach is often two-stage:
+
+```python
+# Stage 1: Train only the new head (fast, avoids destroying pretrained features)
+optimizer = optim.Adam(model.fc.parameters(), lr=0.001)
+# Train for a few epochs...
+
+# Stage 2: Unfreeze some later layers and fine-tune with a smaller LR
+for param in model.layer4.parameters():
+    param.requires_grad = True
+
+# Use different learning rates for different parts
+optimizer = optim.Adam([
+    {'params': model.layer4.parameters(), 'lr': 1e-4},  # Pretrained: small LR
+    {'params': model.fc.parameters(), 'lr': 1e-3},       # New layers: larger LR
+])
+# Train for more epochs...
+```
+
+<KeyTakeaway>
+Transfer learning is the most important practical technique in deep learning. For most real-world tasks, you should **never train from scratch**. Start with a pretrained model, replace the final layer for your number of classes, and fine-tune. This approach often achieves better results with 100x less data and 10x less training time than training from scratch.
+</KeyTakeaway>
+
+### Complete Transfer Learning Example
+
+```python
+from torchvision import datasets, transforms, models
+from torch.utils.data import DataLoader
+import torch.nn as nn
+import torch.optim as optim
+
+# Data transforms: pretrained models expect ImageNet normalization
+train_transform = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225])
+])
+
+test_transform = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225])
+])
+
+# Load your custom dataset (assuming ImageFolder format)
+# train_dataset = datasets.ImageFolder('data/train', transform=train_transform)
+# test_dataset = datasets.ImageFolder('data/test', transform=test_transform)
+# train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+# test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+# Model setup
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = models.resnet18(weights='IMAGENET1K_V1')
+
+for param in model.parameters():
+    param.requires_grad = False
+
+num_classes = 5  # Your number of classes
+model.fc = nn.Linear(512, num_classes)
+model = model.to(device)
+
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.fc.parameters(), lr=0.001)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+
+# Training loop (same pattern as always)
+# for epoch in range(25):
+#     model.train()
+#     for images, labels in train_loader:
+#         images, labels = images.to(device), labels.to(device)
+#         optimizer.zero_grad()
+#         outputs = model(images)
+#         loss = criterion(outputs, labels)
+#         loss.backward()
+#         optimizer.step()
+#     scheduler.step()
+```
+
+## When Deep Learning Shines vs. When It's Overkill
+
+Deep learning is not always the answer. Here is an honest assessment:
+
+### Deep Learning Shines When:
+
+- **Unstructured data:** Images, audio, text, video --- DL dominates here.
+- **Large datasets:** Millions of examples let deep networks shine.
+- **Complex patterns:** Where feature engineering is impractical.
+- **Transfer learning is available:** Pretrained models bootstrap your task.
+- **End-to-end learning:** When you want to avoid manual feature design.
+
+### Deep Learning is Overkill When:
+
+- **Small datasets** (< 1,000 examples): Classical ML often wins (random forests, gradient boosting).
+- **Tabular data:** XGBoost and LightGBM frequently beat neural networks on structured/tabular data.
+- **Interpretability is critical:** A decision tree is far more explainable than a 50-layer CNN.
+- **Compute is limited:** Classical models train in seconds; deep models may need hours and GPUs.
+- **Simple patterns:** If logistic regression achieves 95% accuracy, a neural network might only get 95.5%.
+
+<WhyThisMatters>
+Knowing when *not* to use deep learning is just as important as knowing how to use it. In industry, the best model is often the simplest one that meets the requirements. Start with a simple baseline (logistic regression, random forest), and only move to deep learning if the baseline is insufficient. This saves time, compute, and debugging headaches.
+</WhyThisMatters>
+
+## Putting It All Together: A Production-Ready Training Script
+
+Here is a template that incorporates all the best practices from this lesson:
+
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms, models
+from torch.optim.lr_scheduler import CosineAnnealingLR
+
+def train_model(model, train_loader, val_loader, device,
+                epochs=50, lr=0.001):
+    """Production-ready training function."""
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
+    scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
+
+    best_val_acc = 0.0
+    patience_counter = 0
+    patience = 10
+
+    for epoch in range(epochs):
+        # --- Training ---
+        model.train()
+        train_loss, train_correct, train_total = 0, 0, 0
+
+        for images, labels in train_loader:
+            images, labels = images.to(device), labels.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            loss.backward()
+
+            # Gradient clipping (prevents exploding gradients)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+            optimizer.step()
+
+            train_loss += loss.item() * images.size(0)
+            _, predicted = outputs.max(1)
+            train_correct += predicted.eq(labels).sum().item()
+            train_total += labels.size(0)
+
+        # --- Validation ---
+        model.eval()
+        val_loss, val_correct, val_total = 0, 0, 0
+
+        with torch.no_grad():
+            for images, labels in val_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+
+                val_loss += loss.item() * images.size(0)
+                _, predicted = outputs.max(1)
+                val_correct += predicted.eq(labels).sum().item()
+                val_total += labels.size(0)
+
+        scheduler.step()
+
+        # --- Logging ---
+        train_acc = 100. * train_correct / train_total
+        val_acc = 100. * val_correct / val_total
+        current_lr = optimizer.param_groups[0]['lr']
+
+        print(f"Epoch {epoch+1}/{epochs} | LR: {current_lr:.6f} | "
+              f"Train: {train_acc:.1f}% | Val: {val_acc:.1f}%")
+
+        # --- Early stopping + checkpointing ---
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            torch.save(model.state_dict(), 'best_model.pth')
+            patience_counter = 0
+            print(f"  -> New best model saved (val_acc: {val_acc:.1f}%)")
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"Early stopping at epoch {epoch+1}")
+                break
+
+    # Load best model
+    model.load_state_dict(torch.load('best_model.pth'))
+    print(f"\nBest validation accuracy: {best_val_acc:.1f}%")
+    return model
+```
+
+<KeyTakeaway>
+A production-ready deep learning pipeline combines many techniques: data augmentation and normalization for preprocessing, batch normalization for training stability, dropout for regularization, Adam or AdamW for optimization, learning rate scheduling for convergence, gradient clipping for stability, early stopping to prevent overfitting, and model checkpointing to save the best model. Transfer learning should be your first approach for any vision task. Know when deep learning is the right tool --- and when simpler approaches will serve you better.
+</KeyTakeaway>
+
+## Module 3 Recap
+
+Over these five lessons, you have built a complete understanding of neural networks and deep learning:
+
+1. **Lesson 3.1:** The perceptron, activation functions, layers, and what "deep" means.
+2. **Lesson 3.2:** How networks learn through backpropagation and gradient descent.
+3. **Lesson 3.3:** PyTorch --- tensors, autograd, nn.Module, and the training loop.
+4. **Lesson 3.4:** CNNs --- convolutions, pooling, and classic architectures.
+5. **Lesson 3.5:** Practical techniques --- regularization, optimization, and transfer learning.
+
+You now have both the theoretical foundation and the practical toolkit to build deep learning models for real-world problems. In the next module, we will explore how these ideas extend to sequential data through Recurrent Neural Networks and Transformers.

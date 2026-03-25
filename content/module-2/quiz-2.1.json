@@ -1,0 +1,108 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice",
+      "question": "A model that performs well on training data but poorly on unseen data is exhibiting which problem?",
+      "options": [
+        "Underfitting (high bias)",
+        "Overfitting (high variance)",
+        "Irreducible error",
+        "Data drift"
+      ],
+      "correct": "B",
+      "explanation": "Overfitting means the model has memorized the training data, including its noise, and fails to generalize to new data. This is characterized by low training error but high validation/test error, and it corresponds to high variance."
+    },
+    {
+      "id": "q2",
+      "type": "multiple_choice",
+      "question": "Which of the following is an example of unsupervised learning?",
+      "options": [
+        "Predicting house prices from square footage",
+        "Classifying emails as spam or not-spam",
+        "Grouping customers into segments based on purchasing behavior",
+        "Training a robot to navigate a maze using rewards"
+      ],
+      "correct": "C",
+      "explanation": "Customer segmentation is unsupervised learning because there are no predefined labels — the algorithm discovers groups on its own. Predicting prices and classifying spam are supervised tasks, while maze navigation is reinforcement learning."
+    },
+    {
+      "id": "q3",
+      "type": "multiple_choice",
+      "question": "In the bias-variance decomposition, what does the 'irreducible noise' term represent?",
+      "options": [
+        "Error caused by using too few features",
+        "Error caused by a model that is too complex",
+        "Inherent randomness in the data that no model can eliminate",
+        "Error introduced by incorrect hyperparameter choices"
+      ],
+      "correct": "C",
+      "explanation": "Irreducible noise (also called Bayes error) is the inherent randomness in the data-generating process. Even a perfect model cannot reduce this component of the error. It sets a lower bound on achievable prediction error."
+    },
+    {
+      "id": "q4",
+      "type": "multiple_choice",
+      "question": "Why should the test set NOT be used during model selection or hyperparameter tuning?",
+      "options": [
+        "The test set is typically too small to give reliable scores",
+        "Using it would cause the model to train more slowly",
+        "It would lead to an optimistically biased estimate of generalization performance",
+        "Scikit-learn does not allow access to the test set during training"
+      ],
+      "correct": "C",
+      "explanation": "If you use the test set to make modeling decisions (choosing hyperparameters, selecting between models), you are implicitly fitting to the test set. The resulting performance estimate will be optimistically biased and will not reflect true generalization to completely unseen data."
+    },
+    {
+      "id": "q5",
+      "type": "multiple_choice",
+      "question": "In 5-fold cross-validation, how many times is each data point used for validation?",
+      "options": [
+        "Once",
+        "Twice",
+        "Five times",
+        "It depends on the random seed"
+      ],
+      "correct": "A",
+      "explanation": "In K-fold cross-validation, the data is split into K folds. Each fold serves as the validation set exactly once, while the remaining K-1 folds are used for training. So each data point appears in the validation set exactly one time across all K iterations."
+    },
+    {
+      "id": "q6",
+      "type": "multiple_choice",
+      "question": "Which scenario indicates that a model is underfitting?",
+      "options": [
+        "Training error is low, validation error is high",
+        "Training error is high, validation error is high",
+        "Training error is low, validation error is low",
+        "Training error is high, validation error is low"
+      ],
+      "correct": "B",
+      "explanation": "Underfitting (high bias) means the model is too simple to capture the underlying pattern. It performs poorly everywhere — both on data it has seen (training) and data it has not (validation). Both errors are high."
+    },
+    {
+      "id": "q7",
+      "type": "multiple_choice",
+      "question": "A supervised learning task where the output is a continuous numeric value is called:",
+      "options": [
+        "Classification",
+        "Clustering",
+        "Regression",
+        "Dimensionality reduction"
+      ],
+      "correct": "C",
+      "explanation": "Regression is the supervised learning task of predicting continuous numeric outputs (e.g., price, temperature, score). Classification predicts discrete categories. Clustering and dimensionality reduction are unsupervised tasks."
+    },
+    {
+      "id": "q8",
+      "type": "multiple_choice",
+      "question": "Which of the following is the MOST effective strategy to combat overfitting?",
+      "options": [
+        "Remove regularization to let the model learn freely",
+        "Train for more epochs without any stopping criterion",
+        "Collect more training data",
+        "Increase the polynomial degree of the model"
+      ],
+      "correct": "C",
+      "explanation": "More training data is generally the most effective remedy for overfitting because it provides more evidence of the true underlying pattern and makes it harder for the model to memorize noise. The other options (removing regularization, training longer, increasing complexity) would all make overfitting worse."
+    }
+  ]
+}

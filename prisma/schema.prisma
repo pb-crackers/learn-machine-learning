@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int              @id @default(autoincrement())
+  name      String           @default("Learner") @db.VarChar(100)
+  createdAt DateTime         @default(now()) @map("created_at")
+  progress  LessonProgress[]
+  quizzes   QuizResult[]
+  notes     Note[]
+
+  @@map("users")
+}
+
+model LessonProgress {
+  id                Int       @id @default(autoincrement())
+  userId            Int       @map("user_id")
+  lessonSlug        String    @unique @map("lesson_slug") @db.VarChar(50)
+  moduleNumber      Int       @map("module_number")
+  lessonNumber      Int       @map("lesson_number")
+  conceptsCompleted Boolean   @default(false) @map("concepts_completed")
+  labCompleted      Boolean   @default(false) @map("lab_completed")
+  completedAt       DateTime? @map("completed_at")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
+  user              User      @relation(fields: [userId], references: [id])
+
+  @@map("lesson_progress")
+}
+
+model QuizResult {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @map("user_id")
+  lessonSlug     String   @map("lesson_slug") @db.VarChar(50)
+  score          Int
+  totalQuestions  Int      @map("total_questions")
+  answers        Json
+  completedAt    DateTime @default(now()) @map("completed_at")
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@map("quiz_results")
+}
+
+model Note {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  lessonSlug String   @map("lesson_slug") @db.VarChar(50)
+  content    String   @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@map("notes")
+}

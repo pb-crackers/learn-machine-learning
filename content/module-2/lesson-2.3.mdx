@@ -1,0 +1,495 @@
+---
+module: 2
+lesson: 3
+title: "Classification: Logistic Regression & Beyond"
+description: "Move from regression to classification with logistic regression, understand the sigmoid function, log loss, decision boundaries, and master evaluation metrics for classifiers."
+prerequisites: ["2.2"]
+estimatedMinutes: 55
+---
+
+# Classification: Logistic Regression & Beyond
+
+In the previous lesson, we predicted continuous values (house prices). Now we tackle a different question: given an input, which **category** does it belong to? Is this email spam? Is this tumor malignant? Will this customer churn?
+
+Classification is the most common supervised learning task in industry. The ideas here — sigmoid activation, cross-entropy loss, and evaluation metrics — carry directly into deep learning.
+
+<WhyThisMatters>
+Classification powers most of the ML systems you interact with daily: spam filters, fraud detection, medical diagnosis, content recommendation, and voice assistants. Understanding logistic regression deeply gives you a clear mental model for how these systems work — and for recognizing when they fail.
+</WhyThisMatters>
+
+---
+
+## From Regression to Classification
+
+Why not just use linear regression for classification? Suppose we assign "not-spam" = 0 and "spam" = 1, then fit a line. The problem is that linear regression can output values like $-0.3$ or $2.7$ — numbers that make no sense as probabilities.
+
+We need a function that maps any real number to the range $[0, 1]$.
+
+### The Sigmoid (Logistic) Function
+
+$$\sigma(z) = \frac{1}{1 + e^{-z}}$$
+
+Properties of the sigmoid:
+- Output is always in $(0, 1)$
+- $\sigma(0) = 0.5$
+- As $z \to +\infty$, $\sigma(z) \to 1$
+- As $z \to -\infty$, $\sigma(z) \to 0$
+- Derivative: $\sigma'(z) = \sigma(z)(1 - \sigma(z))$
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+z = np.linspace(-7, 7, 200)
+
+plt.figure(figsize=(8, 5))
+plt.plot(z, sigmoid(z), linewidth=2, color="steelblue")
+plt.axhline(y=0.5, color="gray", linestyle="--", alpha=0.5)
+plt.axvline(x=0, color="gray", linestyle="--", alpha=0.5)
+plt.xlabel("z")
+plt.ylabel("sigmoid(z)")
+plt.title("The Sigmoid Function")
+plt.grid(True, alpha=0.3)
+plt.show()
+```
+
+### The Logistic Regression Hypothesis
+
+Logistic regression wraps the linear function inside a sigmoid:
+
+$$h_\theta(\mathbf{x}) = \sigma(\boldsymbol{\theta}^T \mathbf{x}) = \frac{1}{1 + e^{-\boldsymbol{\theta}^T \mathbf{x}}}$$
+
+<MathNote>
+The output $h_\theta(\mathbf{x})$ is interpreted as the probability that $y = 1$ given input $\mathbf{x}$:
+
+$$P(y=1 \mid \mathbf{x}; \boldsymbol{\theta}) = h_\theta(\mathbf{x})$$
+$$P(y=0 \mid \mathbf{x}; \boldsymbol{\theta}) = 1 - h_\theta(\mathbf{x})$$
+
+These two cases combine into a single expression:
+
+$$P(y \mid \mathbf{x}; \boldsymbol{\theta}) = h_\theta(\mathbf{x})^y \cdot (1 - h_\theta(\mathbf{x}))^{1-y}$$
+
+This is the Bernoulli distribution, and maximizing its likelihood leads us directly to the log loss cost function.
+</MathNote>
+
+---
+
+## The Decision Boundary
+
+To make a concrete prediction (0 or 1), we apply a threshold — typically 0.5:
+
+$$\hat{y} = \begin{cases} 1 & \text{if } h_\theta(\mathbf{x}) \geq 0.5 \\ 0 & \text{if } h_\theta(\mathbf{x}) < 0.5 \end{cases}$$
+
+Since $\sigma(z) = 0.5$ when $z = 0$, the decision boundary is the set of points where:
+
+$$\boldsymbol{\theta}^T \mathbf{x} = 0$$
+
+For two features, this is a straight line. With polynomial features, it becomes a curve.
+
+```python
+from sklearn.datasets import make_classification
+from sklearn.linear_model import LogisticRegression
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Generate 2D classification data
+X, y = make_classification(
+    n_samples=200, n_features=2, n_redundant=0,
+    n_informative=2, n_clusters_per_class=1, random_state=42
+)
+
+# Fit logistic regression
+model = LogisticRegression()
+model.fit(X, y)
+
+# Plot decision boundary
+xx, yy = np.meshgrid(
+    np.linspace(X[:, 0].min() - 1, X[:, 0].max() + 1, 200),
+    np.linspace(X[:, 1].min() - 1, X[:, 1].max() + 1, 200)
+)
+Z = model.predict(np.column_stack([xx.ravel(), yy.ravel()]))
+Z = Z.reshape(xx.shape)
+
+plt.figure(figsize=(8, 6))
+plt.contourf(xx, yy, Z, alpha=0.3, cmap="RdBu")
+plt.scatter(X[:, 0], X[:, 1], c=y, cmap="RdBu", edgecolors="black", s=40)
+plt.xlabel("Feature 1")
+plt.ylabel("Feature 2")
+plt.title("Logistic Regression Decision Boundary")
+plt.colorbar(label="Predicted Class")
+plt.show()
+
+# Examine the learned parameters
+print(f"Weights: {model.coef_[0].round(3)}")
+print(f"Bias: {model.intercept_[0]:.3f}")
+```
+
+---
+
+## The Cost Function: Log Loss (Binary Cross-Entropy)
+
+We cannot use MSE for logistic regression because the sigmoid makes $J(\boldsymbol{\theta})$ non-convex — gradient descent could get stuck in local minima.
+
+Instead, we use **log loss** (binary cross-entropy):
+
+$$J(\boldsymbol{\theta}) = -\frac{1}{m} \sum_{i=1}^{m} \left[ y^{(i)} \log(h_\theta(\mathbf{x}^{(i)})) + (1 - y^{(i)}) \log(1 - h_\theta(\mathbf{x}^{(i)})) \right]$$
+
+<MathNote>
+Why this particular function? Consider what happens for a single sample:
+
+- If $y = 1$: cost = $-\log(h)$. As $h \to 1$, cost $\to 0$. As $h \to 0$, cost $\to \infty$. The model is heavily penalized for confidently predicting the wrong class.
+- If $y = 0$: cost = $-\log(1 - h)$. As $h \to 0$, cost $\to 0$. As $h \to 1$, cost $\to \infty$.
+
+This cost function is derived from maximum likelihood estimation and is provably convex for logistic regression, guaranteeing a single global minimum.
+</MathNote>
+
+```python
+def log_loss_manual(y_true, y_pred_prob, eps=1e-15):
+    """Compute binary cross-entropy loss."""
+    # Clip predictions to avoid log(0)
+    y_pred_prob = np.clip(y_pred_prob, eps, 1 - eps)
+    loss = -np.mean(
+        y_true * np.log(y_pred_prob) +
+        (1 - y_true) * np.log(1 - y_pred_prob)
+    )
+    return loss
+
+# Visualize the loss for a single sample where y=1
+h = np.linspace(0.01, 0.99, 200)
+loss_y1 = -np.log(h)       # cost when y=1
+loss_y0 = -np.log(1 - h)   # cost when y=0
+
+plt.figure(figsize=(8, 5))
+plt.plot(h, loss_y1, label="y = 1: $-\\log(h)$", linewidth=2)
+plt.plot(h, loss_y0, label="y = 0: $-\\log(1-h)$", linewidth=2)
+plt.xlabel("Predicted probability h")
+plt.ylabel("Loss")
+plt.title("Log Loss for a Single Sample")
+plt.legend(fontsize=12)
+plt.grid(True, alpha=0.3)
+plt.show()
+```
+
+### Gradient Descent for Logistic Regression
+
+The gradient has the exact same form as linear regression:
+
+$$\frac{\partial J}{\partial \theta_j} = \frac{1}{m} \sum_{i=1}^{m} (h_\theta(\mathbf{x}^{(i)}) - y^{(i)}) \cdot x_j^{(i)}$$
+
+The only difference is that $h_\theta$ now includes the sigmoid.
+
+```python
+def logistic_gradient_descent(X, y, theta, alpha, num_iters):
+    """Gradient descent for logistic regression."""
+    m = len(y)
+    cost_history = []
+
+    for _ in range(num_iters):
+        z = X @ theta
+        h = sigmoid(z)
+        gradient = (1 / m) * (X.T @ (h - y))
+        theta = theta - alpha * gradient
+        # Compute log loss
+        cost = -np.mean(y * np.log(h + 1e-15) + (1 - y) * np.log(1 - h + 1e-15))
+        cost_history.append(cost)
+
+    return theta, cost_history
+```
+
+---
+
+## Evaluation Metrics for Classification
+
+Accuracy alone is often misleading. Consider a fraud detection system: if only 0.1% of transactions are fraudulent, a model that always predicts "not fraud" achieves 99.9% accuracy — but catches zero fraudsters.
+
+### The Confusion Matrix
+
+|  | Predicted Positive | Predicted Negative |
+|--|--------------------|--------------------|
+| **Actually Positive** | True Positive (TP) | False Negative (FN) |
+| **Actually Negative** | False Positive (FP) | True Negative (TN) |
+
+```python
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+# Load breast cancer dataset
+data = load_breast_cancer()
+X_train, X_test, y_train, y_test = train_test_split(
+    data.data, data.target, test_size=0.2, random_state=42, stratify=data.target
+)
+
+# Train model
+pipeline = Pipeline([
+    ("scaler", StandardScaler()),
+    ("classifier", LogisticRegression(max_iter=1000)),
+])
+pipeline.fit(X_train, y_train)
+y_pred = pipeline.predict(X_test)
+
+# Confusion matrix
+cm = confusion_matrix(y_test, y_pred)
+disp = ConfusionMatrixDisplay(cm, display_labels=data.target_names)
+disp.plot(cmap="Blues")
+plt.title("Confusion Matrix: Breast Cancer Classification")
+plt.show()
+```
+
+### Precision, Recall, and F1 Score
+
+$$\text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}$$
+
+$$\text{Precision} = \frac{TP}{TP + FP} \quad \text{("Of those predicted positive, how many actually are?")}$$
+
+$$\text{Recall} = \frac{TP}{TP + FN} \quad \text{("Of those actually positive, how many did we catch?")}$$
+
+$$\text{F1 Score} = 2 \cdot \frac{\text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}$$
+
+<CommonMistake>
+Precision and recall are always defined with respect to a specific positive class. When you read "precision = 0.95," ask: precision for which class? In binary classification, the positive class is usually the minority or the class of interest (e.g., "fraud," "malignant," "spam"). Scikit-learn's `classification_report` shows metrics for each class.
+</CommonMistake>
+
+```python
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import classification_report
+
+print(f"Accuracy:  {accuracy_score(y_test, y_pred):.3f}")
+print(f"Precision: {precision_score(y_test, y_pred):.3f}")
+print(f"Recall:    {recall_score(y_test, y_pred):.3f}")
+print(f"F1 Score:  {f1_score(y_test, y_pred):.3f}")
+
+print("\nFull Classification Report:")
+print(classification_report(y_test, y_pred, target_names=data.target_names))
+```
+
+### The Precision-Recall Tradeoff
+
+By adjusting the classification threshold (default 0.5), you can trade precision for recall and vice versa.
+
+```python
+from sklearn.metrics import precision_recall_curve, roc_curve, roc_auc_score
+
+# Get predicted probabilities
+y_proba = pipeline.predict_proba(X_test)[:, 1]
+
+# Precision-recall curve
+precisions, recalls, thresholds_pr = precision_recall_curve(y_test, y_proba)
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Precision-Recall curve
+axes[0].plot(recalls, precisions, linewidth=2, color="steelblue")
+axes[0].set_xlabel("Recall")
+axes[0].set_ylabel("Precision")
+axes[0].set_title("Precision-Recall Curve")
+axes[0].grid(True, alpha=0.3)
+
+# ROC curve
+fpr, tpr, thresholds_roc = roc_curve(y_test, y_proba)
+auc = roc_auc_score(y_test, y_proba)
+axes[1].plot(fpr, tpr, linewidth=2, color="tomato", label=f"AUC = {auc:.3f}")
+axes[1].plot([0, 1], [0, 1], "k--", alpha=0.3, label="Random classifier")
+axes[1].set_xlabel("False Positive Rate")
+axes[1].set_ylabel("True Positive Rate")
+axes[1].set_title("ROC Curve")
+axes[1].legend()
+axes[1].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+```
+
+<MathNote>
+The **Area Under the ROC Curve (AUC-ROC)** summarizes the tradeoff across all thresholds in a single number:
+- AUC = 1.0: perfect classifier
+- AUC = 0.5: no better than random guessing
+- AUC < 0.5: worse than random (predictions are inverted)
+
+AUC-ROC has a nice probabilistic interpretation: it is the probability that the model ranks a randomly chosen positive sample higher than a randomly chosen negative sample.
+</MathNote>
+
+---
+
+## Multiclass Classification
+
+What if there are more than two classes? Logistic regression handles this through **one-vs-rest (OvR)** or **softmax regression**.
+
+### One-vs-Rest (OvR)
+
+For $K$ classes, train $K$ separate binary classifiers. Each classifier distinguishes one class from all others. At prediction time, choose the class whose classifier gives the highest score.
+
+### Softmax Regression (Multinomial Logistic Regression)
+
+Softmax generalizes the sigmoid to $K$ classes. For class $k$:
+
+$$P(y = k \mid \mathbf{x}) = \frac{e^{\boldsymbol{\theta}_k^T \mathbf{x}}}{\sum_{j=1}^{K} e^{\boldsymbol{\theta}_j^T \mathbf{x}}}$$
+
+```python
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import classification_report
+
+iris = load_iris()
+X_train, X_test, y_train, y_test = train_test_split(
+    iris.data, iris.target, test_size=0.2, random_state=42, stratify=iris.target
+)
+
+# Multinomial logistic regression
+pipeline = Pipeline([
+    ("scaler", StandardScaler()),
+    ("clf", LogisticRegression(multi_class="multinomial", max_iter=200)),
+])
+pipeline.fit(X_train, y_train)
+y_pred = pipeline.predict(X_test)
+
+print(classification_report(y_test, y_pred, target_names=iris.target_names))
+
+# View predicted probabilities for first 3 samples
+proba = pipeline.predict_proba(X_test[:3])
+for i, (p, true) in enumerate(zip(proba, y_test[:3])):
+    print(f"Sample {i}: probs={p.round(3)}, predicted={p.argmax()}, actual={true}")
+```
+
+---
+
+## K-Nearest Neighbors (KNN): A Brief Introduction
+
+Not every classifier needs gradient descent. **K-Nearest Neighbors** is a simple, non-parametric algorithm:
+
+1. Store all training data.
+2. For a new point, find the $K$ closest training samples (by Euclidean distance or another metric).
+3. Classify by majority vote.
+
+```python
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Generate nonlinear data
+X, y = make_moons(n_samples=300, noise=0.25, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+for ax, k in zip(axes, [1, 5, 50]):
+    knn = KNeighborsClassifier(n_neighbors=k)
+    knn.fit(X_train, y_train)
+
+    # Decision boundary
+    xx, yy = np.meshgrid(
+        np.linspace(X[:, 0].min() - 0.5, X[:, 0].max() + 0.5, 200),
+        np.linspace(X[:, 1].min() - 0.5, X[:, 1].max() + 0.5, 200)
+    )
+    Z = knn.predict(np.column_stack([xx.ravel(), yy.ravel()])).reshape(xx.shape)
+
+    ax.contourf(xx, yy, Z, alpha=0.3, cmap="RdBu")
+    ax.scatter(X_test[:, 0], X_test[:, 1], c=y_test, cmap="RdBu", edgecolors="k", s=30)
+    acc = knn.score(X_test, y_test)
+    ax.set_title(f"K = {k}, Accuracy = {acc:.2f}")
+
+plt.tight_layout()
+plt.show()
+```
+
+<KeyTakeaway>
+KNN demonstrates the bias-variance tradeoff clearly:
+- **Small K** (e.g., 1): very flexible, captures noise (high variance, low bias)
+- **Large K** (e.g., 50): very smooth, may miss fine patterns (low variance, high bias)
+
+KNN also highlights the curse of dimensionality: in high-dimensional spaces, distances become less meaningful and KNN performance degrades. It works best with few features and moderate dataset sizes.
+</KeyTakeaway>
+
+---
+
+## Choosing Between Classifiers
+
+| Algorithm | Strengths | Weaknesses |
+|-----------|-----------|------------|
+| **Logistic Regression** | Fast, interpretable, probabilistic outputs, works well with many features | Assumes linear decision boundary |
+| **KNN** | Non-parametric, captures nonlinear patterns, no training phase | Slow at prediction time, sensitive to feature scales, poor in high dimensions |
+| **Decision Trees** (next lesson) | Handles nonlinear data, no feature scaling needed, interpretable | Prone to overfitting |
+
+<WhyThisMatters>
+In practice, you often try multiple classifiers and compare them using cross-validation. Logistic regression is almost always a good first baseline — it is fast, interpretable, and surprisingly competitive. If it works well enough for your use case, there is no need for a more complex model. Start simple, add complexity only when the data demands it.
+</WhyThisMatters>
+
+---
+
+## Complete Example: Classifier Comparison
+
+```python
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import classification_report
+import numpy as np
+
+# Load data
+data = load_breast_cancer()
+X_train, X_test, y_train, y_test = train_test_split(
+    data.data, data.target, test_size=0.2, random_state=42, stratify=data.target
+)
+
+# Define models
+models = {
+    "Logistic Regression": Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", LogisticRegression(max_iter=1000)),
+    ]),
+    "KNN (k=5)": Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", KNeighborsClassifier(n_neighbors=5)),
+    ]),
+    "KNN (k=15)": Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", KNeighborsClassifier(n_neighbors=15)),
+    ]),
+}
+
+# Cross-validate each model
+print("5-Fold Cross-Validation Results:")
+print("-" * 50)
+for name, model in models.items():
+    scores = cross_val_score(model, X_train, y_train, cv=5, scoring="f1")
+    print(f"{name:25s}  F1 = {scores.mean():.3f} +/- {scores.std():.3f}")
+
+# Final evaluation with best model
+best_model = models["Logistic Regression"]
+best_model.fit(X_train, y_train)
+y_pred = best_model.predict(X_test)
+print("\nTest Set Classification Report:")
+print(classification_report(y_test, y_pred, target_names=data.target_names))
+```
+
+---
+
+## Summary
+
+| Concept | Key Idea |
+|---------|----------|
+| **Sigmoid function** | $\sigma(z) = \frac{1}{1+e^{-z}}$, maps $\mathbb{R} \to (0,1)$ |
+| **Logistic regression** | Linear model + sigmoid = probability of class 1 |
+| **Decision boundary** | Where $\boldsymbol{\theta}^T\mathbf{x} = 0$ |
+| **Log loss** | $-\frac{1}{m}\sum[y\log h + (1-y)\log(1-h)]$, derived from MLE |
+| **Confusion matrix** | TP, FP, TN, FN — the foundation of all metrics |
+| **Precision** | Of predicted positives, how many are correct? |
+| **Recall** | Of actual positives, how many did we find? |
+| **F1 Score** | Harmonic mean of precision and recall |
+| **AUC-ROC** | Single number summarizing the precision-recall tradeoff |
+| **KNN** | Classify by majority vote of nearest neighbors |
+
+Next up: decision trees and ensemble methods — models that can capture complex, nonlinear boundaries without manual feature engineering.
