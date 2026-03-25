@@ -1,234 +1,692 @@
 """
 Lab 4.5: Build a Simple RAG Pipeline
-====================================
-Retrieval-Augmented Generation from scratch.
+=====================================
+
+Build a Retrieval-Augmented Generation pipeline: embed documents,
+store them in a vector store, retrieve relevant context, and
+generate grounded answers.
 """
 
 import numpy as np
+from typing import List, Tuple, Optional
+
+# Attempt to import sentence-transformers; provide fallback guidance
+try:
+    from sentence_transformers import SentenceTransformer
+    HAS_SBERT = True
+except ImportError:
+    HAS_SBERT = False
+    print("WARNING: sentence-transformers not installed.")
+    print("Install with: pip install sentence-transformers")
+    print("Falling back to random embeddings for demonstration.\n")
+
+
+# ============================================================
+# Sample Knowledge Base (Fictional Company: Acme Robotics)
+# ============================================================
+
+KNOWLEDGE_BASE = [
+    {
+        "id": "prod-001",
+        "category": "product",
+        "title": "RoboArm Pro",
+        "content": (
+            "The RoboArm Pro is Acme Robotics' flagship industrial robotic arm. "
+            "It features 6 degrees of freedom, a maximum payload of 10 kg, and "
+            "a reach of 1.2 meters. The arm uses brushless servo motors for "
+            "precise positioning with repeatability of +/-0.02 mm. It is designed "
+            "for manufacturing, assembly, and pick-and-place operations. The "
+            "RoboArm Pro supports ROS 2 integration and can be programmed using "
+            "Python, C++, or Acme's proprietary visual programming interface."
+        ),
+    },
+    {
+        "id": "prod-002",
+        "category": "product",
+        "title": "RoboArm Lite",
+        "content": (
+            "The RoboArm Lite is a compact robotic arm designed for education "
+            "and prototyping. It has 5 degrees of freedom, a payload of 0.5 kg, "
+            "and a reach of 0.4 meters. It uses stepper motors and is controlled "
+            "via USB or Wi-Fi. The Lite comes with a Python SDK and tutorial "
+            "curriculum for teaching robotics fundamentals. It is priced at $299 "
+            "for educational institutions."
+        ),
+    },
+    {
+        "id": "prod-003",
+        "category": "product",
+        "title": "NavBot Autonomous Platform",
+        "content": (
+            "The NavBot is a wheeled autonomous mobile platform for warehouse "
+            "and logistics applications. It uses LiDAR and camera-based SLAM "
+            "for navigation, can carry up to 200 kg, and operates for 8 hours "
+            "on a single charge. The NavBot integrates with standard warehouse "
+            "management systems via REST API and supports fleet coordination "
+            "for multi-robot deployments."
+        ),
+    },
+    {
+        "id": "warranty-001",
+        "category": "policy",
+        "title": "Standard Warranty Policy",
+        "content": (
+            "All Acme Robotics products include a standard warranty. The "
+            "RoboArm Pro comes with a 2-year limited warranty covering "
+            "manufacturing defects and component failures under normal use. "
+            "The RoboArm Lite has a 1-year warranty. The NavBot platform "
+            "carries a 3-year warranty on the chassis and 1-year on the "
+            "battery. Extended warranty plans are available for purchase "
+            "within 30 days of the original purchase date."
+        ),
+    },
+    {
+        "id": "warranty-002",
+        "category": "policy",
+        "title": "Warranty Exclusions",
+        "content": (
+            "The warranty does not cover damage caused by misuse, unauthorized "
+            "modifications, exposure to extreme environments beyond rated specs, "
+            "or normal wear and tear. Software issues are covered under a "
+            "separate software support agreement. Consumable parts such as "
+            "gripper pads and drive belts are not covered under warranty."
+        ),
+    },
+    {
+        "id": "support-001",
+        "category": "support",
+        "title": "Technical Support",
+        "content": (
+            "Acme Robotics offers three tiers of technical support. Basic "
+            "support (included with purchase) provides email support with "
+            "48-hour response time and access to the online knowledge base. "
+            "Professional support ($500/year) adds phone support, 4-hour "
+            "response time, and remote diagnostics. Enterprise support "
+            "(custom pricing) includes on-site engineers, 1-hour response "
+            "time, and dedicated account management."
+        ),
+    },
+    {
+        "id": "return-001",
+        "category": "policy",
+        "title": "Return Policy",
+        "content": (
+            "Products may be returned within 30 days of delivery for a full "
+            "refund, provided they are in original packaging and undamaged. "
+            "Custom-configured units are non-refundable. Return shipping is "
+            "the responsibility of the customer unless the return is due to "
+            "a defect. Refunds are processed within 10 business days of "
+            "receiving the returned product."
+        ),
+    },
+    {
+        "id": "spec-001",
+        "category": "technical",
+        "title": "RoboArm Pro Specifications",
+        "content": (
+            "RoboArm Pro technical specifications: Weight: 28 kg. Power: "
+            "48V DC, 500W max draw. Communication: EtherCAT, CAN bus, "
+            "Ethernet (TCP/IP). Operating temperature: 0-45 degrees C. IP rating: "
+            "IP54. Noise level: <65 dB. Certifications: CE, UL, ISO 10218-1. "
+            "Joint speeds: J1-J3: 180 deg/s, J4-J6: 360 deg/s. Software: ROS 2 "
+            "Humble, Acme SDK v3.2+, Python 3.9+."
+        ),
+    },
+    {
+        "id": "spec-002",
+        "category": "technical",
+        "title": "NavBot Specifications",
+        "content": (
+            "NavBot technical specifications: Dimensions: 800x600x350 mm. "
+            "Weight: 45 kg (unloaded). Max speed: 2 m/s. LiDAR: Velodyne "
+            "VLP-16 (optional upgrade to VLP-32). Cameras: 4x Intel RealSense "
+            "D435i. Compute: NVIDIA Jetson Orin. Battery: 48V 30Ah LiFePO4. "
+            "Charging time: 3 hours. Connectivity: Wi-Fi 6, 5G (optional), "
+            "Bluetooth 5.2."
+        ),
+    },
+    {
+        "id": "setup-001",
+        "category": "support",
+        "title": "RoboArm Pro Setup Guide",
+        "content": (
+            "To set up the RoboArm Pro: 1) Mount the base to a stable surface "
+            "rated for 50 kg using the provided M10 bolts. 2) Connect the 48V "
+            "power supply. 3) Connect the EtherCAT or Ethernet cable to your "
+            "control computer. 4) Install the Acme SDK: pip install acme-robotics. "
+            "5) Run the calibration routine: acme-calibrate --model pro. "
+            "6) Verify with the test script: python -m acme.test_arm. The "
+            "calibration process takes approximately 5 minutes."
+        ),
+    },
+    {
+        "id": "pricing-001",
+        "category": "product",
+        "title": "Pricing",
+        "content": (
+            "Current product pricing (as of 2025): RoboArm Pro: $12,500 "
+            "(base configuration). RoboArm Pro with force-torque sensor: "
+            "$14,200. RoboArm Pro with vision package: $15,800. RoboArm "
+            "Lite: $299 (educational), $499 (commercial license). NavBot: "
+            "$35,000 (single unit), volume discounts available for fleet "
+            "orders of 10+ units. All prices are USD, excluding shipping "
+            "and applicable taxes."
+        ),
+    },
+    {
+        "id": "safety-001",
+        "category": "technical",
+        "title": "Safety Guidelines",
+        "content": (
+            "The RoboArm Pro must be operated within a safety enclosure "
+            "compliant with ISO 10218-2 when running at full speed. "
+            "Collaborative mode (reduced speed, force-limited) allows "
+            "operation without enclosure but requires a risk assessment. "
+            "Emergency stop buttons must be accessible within 2 meters of "
+            "the operating area. All operators must complete the Acme "
+            "Robotics safety training course before operating any equipment."
+        ),
+    },
+]
 
 
 # ============================================================
 # Exercise 1: Document Embedding
 # ============================================================
 
-print("=" * 50)
-print("Exercise 1: Document Embedding")
-print("=" * 50)
+class DocumentEmbedder:
+    """Embed documents using a sentence transformer model."""
 
-# Sample knowledge base about machine learning
-documents = [
-    "Linear regression finds the best-fitting line through data by minimizing the sum of squared errors between predicted and actual values.",
-    "Decision trees split data based on feature values, creating a tree structure where each leaf represents a prediction.",
-    "Neural networks consist of layers of interconnected neurons that learn to transform inputs into outputs through training.",
-    "Gradient descent is an optimization algorithm that iteratively adjusts model parameters by moving in the direction of steepest decrease in the loss function.",
-    "Overfitting occurs when a model learns the training data too well, including its noise, and fails to generalize to new data.",
-    "Cross-validation splits data into multiple folds and trains on different combinations to get a robust estimate of model performance.",
-    "Transformers use self-attention mechanisms to process all tokens in a sequence simultaneously, enabling parallel computation.",
-    "Word embeddings represent words as dense vectors where similar words are close together in the vector space.",
-    "Convolutional neural networks use filters that slide over input data to detect local patterns like edges and textures.",
-    "Regularization techniques like L1, L2, and dropout help prevent overfitting by constraining model complexity.",
-    "Batch normalization normalizes the inputs of each layer, which helps stabilize and speed up training.",
-    "Transfer learning uses a model pretrained on a large dataset as a starting point for a new task with limited data.",
-]
+    def __init__(self, model_name='all-MiniLM-L6-v2'):
+        """
+        Initialize the embedder.
 
-# Option A: Use sentence-transformers (recommended)
-try:
-    from sentence_transformers import SentenceTransformer
+        Parameters
+        ----------
+        model_name : str
+            Name of the sentence-transformers model to use.
+        """
+        if HAS_SBERT:
+            print(f"Loading embedding model: {model_name}")
+            self.model = SentenceTransformer(model_name)
+            self.embedding_dim = self.model.get_sentence_embedding_dimension()
+        else:
+            print("Using random embeddings (install sentence-transformers for real ones)")
+            self.model = None
+            self.embedding_dim = 384  # Mimic MiniLM dimensions
 
-    model = SentenceTransformer("all-MiniLM-L6-v2")  # Small, fast model
-    embeddings = model.encode(documents)
-    print(f"Using sentence-transformers model")
-    print(f"Embedding dimension: {embeddings.shape[1]}")
+        print(f"Embedding dimension: {self.embedding_dim}")
 
-    def embed_text(text):
-        return model.encode([text])[0]
+    def embed(self, texts: List[str]) -> np.ndarray:
+        """
+        Compute embeddings for a list of texts.
 
-except ImportError:
-    # Option B: Simple TF-IDF-based embeddings as fallback
-    print("sentence-transformers not installed, using simple TF-IDF fallback")
-    print("Install with: pip install sentence-transformers")
+        Parameters
+        ----------
+        texts : list of str
+            Texts to embed.
 
-    from collections import Counter
-    import re
+        Returns
+        -------
+        embeddings : np.ndarray, shape (len(texts), embedding_dim)
+        """
+        if self.model is not None:
+            # TODO: Use the sentence transformer model to encode texts
+            # embeddings = self.model.encode(texts, show_progress_bar=True)
+            # return np.array(embeddings)
+            pass
 
-    def tokenize(text):
-        return re.findall(r'\w+', text.lower())
-
-    # Build vocabulary
-    all_tokens = set()
-    for doc in documents:
-        all_tokens.update(tokenize(doc))
-    vocab = sorted(all_tokens)
-    word_to_idx = {w: i for i, w in enumerate(vocab)}
-
-    def simple_embed(text):
-        tokens = tokenize(text)
-        counts = Counter(tokens)
-        vec = np.zeros(len(vocab))
-        for token, count in counts.items():
-            if token in word_to_idx:
-                vec[word_to_idx[token]] = count
-        # Normalize
-        norm = np.linalg.norm(vec)
-        return vec / norm if norm > 0 else vec
-
-    embeddings = np.array([simple_embed(doc) for doc in documents])
-    embed_text = simple_embed
-    print(f"Embedding dimension: {embeddings.shape[1]}")
-
-print(f"Embedded {len(documents)} documents")
-print(f"Embeddings shape: {embeddings.shape}")
-print()
+        # Fallback: random embeddings (for testing without sentence-transformers)
+        np.random.seed(42)
+        return np.random.randn(len(texts), self.embedding_dim).astype(np.float32)
 
 
 # ============================================================
 # Exercise 2: Simple Vector Store
 # ============================================================
 
-print("=" * 50)
-print("Exercise 2: Simple Vector Store")
-print("=" * 50)
-
-
 class SimpleVectorStore:
-    """A minimal in-memory vector store with cosine similarity search."""
+    """An in-memory vector store with cosine similarity search."""
 
     def __init__(self):
-        self.documents = []
-        self.embeddings = []
+        self.documents = []       # List of document dicts
+        self.embeddings = None    # np.ndarray of shape (n_docs, embedding_dim)
 
-    def add_documents(self, docs, embeds):
-        """Add documents and their embeddings to the store."""
-        self.documents.extend(docs)
-        self.embeddings = list(embeds) if not self.embeddings else self.embeddings + list(embeds)
-
-    def cosine_similarity(self, a, b):
-        """Compute cosine similarity between two vectors."""
-        # TODO: Implement cosine similarity
-        # cos_sim = (a · b) / (||a|| * ||b||)
-        dot_product = np.dot(a, b)
-        norm_a = np.linalg.norm(a)
-        norm_b = np.linalg.norm(b)
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot_product / (norm_a * norm_b)
-
-    def search(self, query_embedding, top_k=3):
+    def add(self, documents: List[dict], embeddings: np.ndarray):
         """
-        Find the top-k most similar documents to the query.
+        Add documents and their embeddings to the store.
 
-        Returns: List of (document, score) tuples
+        Parameters
+        ----------
+        documents : list of dict
+            Each dict should have at least 'content' and 'id' keys.
+        embeddings : np.ndarray, shape (n_docs, embedding_dim)
         """
-        scores = []
-        for i, emb in enumerate(self.embeddings):
-            sim = self.cosine_similarity(query_embedding, emb)
-            scores.append((i, sim))
+        # TODO: Store the documents and embeddings
+        # self.documents.extend(documents)
+        # if self.embeddings is None:
+        #     self.embeddings = embeddings
+        # else:
+        #     self.embeddings = np.vstack([self.embeddings, embeddings])
+        #
+        # print(f"  Added {len(documents)} documents. "
+        #       f"Total: {len(self.documents)}")
+        pass
 
-        # Sort by similarity (descending)
-        scores.sort(key=lambda x: x[1], reverse=True)
+    def search(self, query_embedding: np.ndarray, top_k: int = 3
+               ) -> List[Tuple[dict, float]]:
+        """
+        Find the most similar documents to the query.
 
-        results = []
-        for idx, score in scores[:top_k]:
-            results.append((self.documents[idx], score))
+        Parameters
+        ----------
+        query_embedding : np.ndarray, shape (embedding_dim,)
+        top_k : int
+            Number of results to return.
 
-        return results
+        Returns
+        -------
+        results : list of (document_dict, similarity_score)
+            Sorted by descending similarity.
+        """
+        if self.embeddings is None or len(self.documents) == 0:
+            return []
 
+        # TODO: Compute cosine similarity between query and all documents
+        # 1. Normalize the query embedding
+        # query_norm = query_embedding / np.linalg.norm(query_embedding)
+        #
+        # 2. Normalize all document embeddings
+        # doc_norms = self.embeddings / np.linalg.norm(
+        #     self.embeddings, axis=1, keepdims=True
+        # )
+        #
+        # 3. Compute cosine similarity (dot product of normalized vectors)
+        # similarities = np.dot(doc_norms, query_norm)
+        #
+        # 4. Get top-k indices
+        # top_indices = np.argsort(similarities)[::-1][:top_k]
+        #
+        # 5. Return documents with scores
+        # results = [
+        #     (self.documents[i], float(similarities[i]))
+        #     for i in top_indices
+        # ]
+        # return results
 
-# Create and populate the vector store
-store = SimpleVectorStore()
-store.add_documents(documents, embeddings)
-print(f"Vector store contains {len(store.documents)} documents")
-print()
+        return []  # Replace with the code above
 
 
 # ============================================================
-# Exercise 3: Retrieval
+# Exercise 3: Document Chunking
 # ============================================================
 
-print("=" * 50)
-print("Exercise 3: Retrieval")
-print("=" * 50)
+def chunk_document(text: str, chunk_size: int = 200,
+                   overlap: int = 50) -> List[str]:
+    """
+    Split a document into overlapping chunks.
 
-queries = [
-    "How do neural networks learn?",
-    "What is overfitting and how to prevent it?",
-    "How do transformers work?",
-]
+    Parameters
+    ----------
+    text : str
+        The document text.
+    chunk_size : int
+        Maximum number of words per chunk.
+    overlap : int
+        Number of overlapping words between consecutive chunks.
 
-for query in queries:
-    print(f"\nQuery: {query}")
-    query_emb = embed_text(query)
-    results = store.search(query_emb, top_k=3)
+    Returns
+    -------
+    chunks : list of str
+    """
+    # TODO: Split text into overlapping chunks
+    # words = text.split()
+    # chunks = []
+    # start = 0
+    #
+    # while start < len(words):
+    #     end = start + chunk_size
+    #     chunk = " ".join(words[start:end])
+    #     chunks.append(chunk)
+    #     start = end - overlap
+    #
+    #     # Avoid infinite loop for very small texts
+    #     if end >= len(words):
+    #         break
+    #
+    # return chunks
 
-    for i, (doc, score) in enumerate(results):
-        print(f"  {i+1}. [{score:.3f}] {doc[:80]}...")
+    # Placeholder: return entire text as single chunk
+    return [text]
+
+
+def prepare_knowledge_base(kb: List[dict], chunking: bool = False,
+                           chunk_size: int = 200, overlap: int = 50
+                           ) -> List[dict]:
+    """
+    Prepare knowledge base documents, optionally chunking long ones.
+
+    Parameters
+    ----------
+    kb : list of dict
+        Raw knowledge base entries.
+    chunking : bool
+        Whether to split documents into chunks.
+    chunk_size : int
+        Words per chunk (if chunking).
+    overlap : int
+        Overlap words (if chunking).
+
+    Returns
+    -------
+    processed : list of dict
+        Each dict has 'id', 'content', 'title', 'category' keys.
+    """
+    processed = []
+
+    for doc in kb:
+        if chunking:
+            chunks = chunk_document(doc["content"], chunk_size, overlap)
+            for i, chunk in enumerate(chunks):
+                processed.append({
+                    "id": f"{doc['id']}-chunk-{i}",
+                    "content": chunk,
+                    "title": doc["title"],
+                    "category": doc["category"],
+                    "parent_id": doc["id"],
+                })
+        else:
+            processed.append({
+                "id": doc["id"],
+                "content": doc["content"],
+                "title": doc["title"],
+                "category": doc["category"],
+            })
+
+    return processed
 
 
 # ============================================================
 # Exercise 4: RAG Pipeline
 # ============================================================
 
-print("\n" + "=" * 50)
-print("Exercise 4: RAG Pipeline")
-print("=" * 50)
+class RAGPipeline:
+    """A simple Retrieval-Augmented Generation pipeline."""
+
+    def __init__(self, embedder: DocumentEmbedder, store: SimpleVectorStore):
+        self.embedder = embedder
+        self.store = store
+
+    def retrieve(self, query: str, top_k: int = 3
+                 ) -> List[Tuple[dict, float]]:
+        """
+        Retrieve relevant documents for a query.
+
+        Parameters
+        ----------
+        query : str
+            The user's question.
+        top_k : int
+            Number of documents to retrieve.
+
+        Returns
+        -------
+        results : list of (document_dict, similarity_score)
+        """
+        # TODO: Embed the query and search the vector store
+        # query_embedding = self.embedder.embed([query])[0]
+        # return self.store.search(query_embedding, top_k=top_k)
+
+        return []  # Replace with the code above
+
+    def build_prompt(self, query: str, retrieved: List[Tuple[dict, float]],
+                     system_prompt: Optional[str] = None) -> str:
+        """
+        Build an augmented prompt with retrieved context.
+
+        Parameters
+        ----------
+        query : str
+            The user's question.
+        retrieved : list of (document_dict, similarity_score)
+            Retrieved documents and their scores.
+        system_prompt : str, optional
+            Custom system instructions.
+
+        Returns
+        -------
+        prompt : str
+            The full prompt to send to an LLM.
+        """
+        if system_prompt is None:
+            system_prompt = (
+                "You are a helpful customer support assistant for Acme Robotics. "
+                "Answer the user's question based ONLY on the provided context. "
+                "If the context does not contain enough information to answer, "
+                "say 'I don't have enough information to answer that question.' "
+                "Always cite which document your answer is based on."
+            )
+
+        # TODO: Format the retrieved documents as context
+        # context_parts = []
+        # for i, (doc, score) in enumerate(retrieved):
+        #     context_parts.append(
+        #         f"[Document: {doc['title']} (relevance: {score:.3f})]\n"
+        #         f"{doc['content']}"
+        #     )
+        # context = "\n\n".join(context_parts)
+        #
+        # prompt = f"""{system_prompt}
+        #
+        # Context:
+        # {context}
+        #
+        # User question: {query}
+        #
+        # Answer:"""
+        #
+        # return prompt
+
+        return f"[Prompt construction not implemented]\nQuery: {query}"
+
+    def query(self, question: str, top_k: int = 3) -> str:
+        """
+        Full RAG pipeline: retrieve + build prompt.
+
+        Parameters
+        ----------
+        question : str
+        top_k : int
+
+        Returns
+        -------
+        prompt : str
+            The augmented prompt (ready to send to an LLM).
+        """
+        print(f"\nQuery: \"{question}\"")
+
+        # Retrieve
+        retrieved = self.retrieve(question, top_k=top_k)
+
+        if retrieved:
+            print(f"\nRetrieved {len(retrieved)} documents:")
+            for doc, score in retrieved:
+                print(f"  [{score:.3f}] {doc['title']}: "
+                      f"{doc['content'][:80]}...")
+        else:
+            print("  No documents retrieved.")
+
+        # Build prompt
+        prompt = self.build_prompt(question, retrieved)
+        return prompt
 
 
-def rag_answer(query, store, top_k=3):
+# ============================================================
+# Exercise 5: Evaluation Helpers
+# ============================================================
+
+def evaluate_retrieval(rag: RAGPipeline, test_queries: List[dict]):
     """
-    Simple RAG pipeline:
-    1. Embed the query
-    2. Retrieve relevant documents
-    3. Format a prompt with context
-    4. (In production, send to an LLM)
+    Evaluate retrieval quality on test queries.
+
+    Parameters
+    ----------
+    rag : RAGPipeline
+    test_queries : list of dict
+        Each dict has 'question' and 'expected_doc_ids' keys.
     """
-    # Step 1: Embed the query
-    query_emb = embed_text(query)
+    print("\n" + "=" * 50)
+    print("Retrieval Evaluation")
+    print("=" * 50)
 
-    # Step 2: Retrieve relevant context
-    results = store.search(query_emb, top_k=top_k)
+    hits = 0
+    total = 0
 
-    # Step 3: Format the prompt
-    context = "\n".join([f"- {doc}" for doc, _ in results])
+    for tq in test_queries:
+        question = tq["question"]
+        expected_ids = set(tq["expected_doc_ids"])
 
-    prompt = f"""Answer the question based on the following context.
+        retrieved = rag.retrieve(question, top_k=3)
+        retrieved_ids = {doc["id"] for doc, _ in retrieved}
 
-Context:
-{context}
+        # Check if any expected document was retrieved
+        found = bool(expected_ids & retrieved_ids)
+        if found:
+            hits += 1
+        total += 1
 
-Question: {query}
+        status = "HIT" if found else "MISS"
+        print(f"\n  [{status}] Q: {question}")
+        print(f"    Expected: {expected_ids}")
+        print(f"    Retrieved: {retrieved_ids}")
 
-Answer:"""
-
-    print(f"\n--- Generated Prompt ---")
-    print(prompt)
-    print(f"--- End Prompt ---\n")
-
-    # Step 4: In production, you would send this to an LLM:
-    # response = openai.ChatCompletion.create(
-    #     model="gpt-3.5-turbo",
-    #     messages=[{"role": "user", "content": prompt}]
-    # )
-    # return response.choices[0].message.content
-
-    print("(In production, this prompt would be sent to an LLM for a natural language answer)")
-    return context
+    if total > 0:
+        print(f"\n  Recall@3: {hits}/{total} ({100*hits/total:.0f}%)")
 
 
-# Run the RAG pipeline
-queries = [
-    "What technique helps prevent a model from memorizing training data?",
-    "How do transformers process sequences differently from RNNs?",
-]
+# ============================================================
+# Main
+# ============================================================
 
-for query in queries:
-    print(f"\n{'='*40}")
-    print(f"User Question: {query}")
-    rag_answer(query, store)
+if __name__ == '__main__':
+    # --- Exercise 1: Document Embedding ---
+    print("=" * 60)
+    print("Exercise 1: Document Embedding")
+    print("=" * 60)
 
+    embedder = DocumentEmbedder()
 
-print("\n\nDone! You've built a complete RAG pipeline.")
-print("Next steps:")
-print("  1. Replace the sample docs with a real knowledge base")
-print("  2. Use sentence-transformers for better embeddings")
-print("  3. Connect to an LLM API for generation")
-print("  4. Try a real vector database (e.g., ChromaDB, FAISS)")
+    # Prepare documents (without chunking first)
+    docs = prepare_knowledge_base(KNOWLEDGE_BASE, chunking=False)
+    print(f"\nPrepared {len(docs)} documents")
+
+    # Embed all document contents
+    texts = [d["content"] for d in docs]
+    embeddings = embedder.embed(texts)
+    print(f"Embeddings shape: {embeddings.shape}")
+
+    # Show similarity between related documents
+    if embeddings is not None:
+        # Compute pairwise cosine similarity
+        norms = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+        sim_matrix = np.dot(norms, norms.T)
+        print("\nSample similarities:")
+        for i in range(min(3, len(docs))):
+            for j in range(i+1, min(5, len(docs))):
+                print(f"  sim('{docs[i]['title']}', '{docs[j]['title']}') "
+                      f"= {sim_matrix[i][j]:.3f}")
+
+    # --- Exercise 2: Vector Store ---
+    print("\n" + "=" * 60)
+    print("Exercise 2: Simple Vector Store")
+    print("=" * 60)
+
+    store = SimpleVectorStore()
+    store.add(docs, embeddings)
+
+    # Test search
+    test_query = "What is the warranty for the robotic arm?"
+    query_emb = embedder.embed([test_query])[0]
+    results = store.search(query_emb, top_k=3)
+    print(f"\nSearch: \"{test_query}\"")
+    for doc, score in results:
+        print(f"  [{score:.3f}] {doc['title']}")
+
+    # --- Exercise 3: Chunking ---
+    print("\n" + "=" * 60)
+    print("Exercise 3: Document Chunking")
+    print("=" * 60)
+
+    chunked_docs = prepare_knowledge_base(
+        KNOWLEDGE_BASE, chunking=True, chunk_size=50, overlap=10
+    )
+    print(f"Original docs: {len(KNOWLEDGE_BASE)}")
+    print(f"After chunking: {len(chunked_docs)}")
+
+    # Show a few chunks
+    for chunk in chunked_docs[:3]:
+        print(f"  [{chunk['id']}] {chunk['content'][:60]}...")
+
+    # --- Exercise 4: RAG Pipeline ---
+    print("\n" + "=" * 60)
+    print("Exercise 4: RAG Pipeline")
+    print("=" * 60)
+
+    rag = RAGPipeline(embedder, store)
+
+    test_questions = [
+        "What is the warranty period for the RoboArm Pro?",
+        "How much does the NavBot cost?",
+        "How do I set up the RoboArm Pro?",
+        "What safety certifications does the RoboArm Pro have?",
+        "Can I return a custom-configured robot?",
+    ]
+
+    for question in test_questions:
+        prompt = rag.query(question, top_k=3)
+        print(f"\n{'---' * 14}")
+        print("AUGMENTED PROMPT (first 500 chars):")
+        print(prompt[:500])
+        print("...")
+
+    # --- Exercise 5: Evaluation ---
+    print("\n" + "=" * 60)
+    print("Exercise 5: Evaluate Retrieval")
+    print("=" * 60)
+
+    eval_queries = [
+        {
+            "question": "What warranty does the RoboArm Pro have?",
+            "expected_doc_ids": {"warranty-001"},
+        },
+        {
+            "question": "How much does the RoboArm Lite cost?",
+            "expected_doc_ids": {"pricing-001"},
+        },
+        {
+            "question": "What sensors does the NavBot use?",
+            "expected_doc_ids": {"spec-002", "prod-003"},
+        },
+        {
+            "question": "How do I get technical support?",
+            "expected_doc_ids": {"support-001"},
+        },
+        {
+            "question": "What are the safety requirements?",
+            "expected_doc_ids": {"safety-001"},
+        },
+    ]
+
+    evaluate_retrieval(rag, eval_queries)
+
+    print("\n" + "=" * 60)
+    print("Lab 4.5 Complete!")
+    print("=" * 60)
+    print("\nKey takeaways:")
+    print("  - Sentence embeddings map text to dense vectors for semantic search")
+    print("  - Vector stores enable fast similarity search over document collections")
+    print("  - Chunking improves retrieval by creating focused, topical units")
+    print("  - RAG grounds LLM responses in actual documents, reducing hallucination")
+    print("  - Retrieval quality is the most important factor in RAG system quality")
+    print("\nNext step: Send the augmented prompts to an LLM (OpenAI, Claude, or local)")
+    print("and compare answers with and without retrieved context!")
