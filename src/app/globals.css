@@ -78,6 +78,36 @@
   font-style: italic;
 }
 
+/* Tables */
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  font-size: 0.875rem;
+}
+
+.prose thead {
+  background: #f1f5f9;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.prose th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.prose td {
+  padding: 0.75rem 1rem;
+  color: #334155;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.prose tbody tr:hover {
+  background: #f8fafc;
+}
+
 /* Code blocks styled by rehype-pretty-code */
 .prose pre {
   background: #1e293b;
